@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.1.2] - 2026-10-11
+
+### Added
+
 - A plugin icon.
 
 ### Changed

@@ -1,6 +1,6 @@
 {
   "name": "claude-session-titler",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves.",
   "type": "module",
