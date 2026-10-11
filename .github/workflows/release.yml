@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Bump version, tag, and publish release
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Determine version bump
+        id: bump
+        uses: actions/github-script@v9
+        with:
+          result-encoding: string
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            if (labels.includes('major')) return 'major';
+            if (labels.includes('minor')) return 'minor';
+            if (labels.includes('patch')) return 'patch';
+            return 'norelease';
+
+      - name: Skip release
+        if: steps.bump.outputs.result == 'norelease'
+        run: echo "PR labelled norelease; skipping version bump and release."
+
+      - name: Configure git
+        if: steps.bump.outputs.result != 'norelease'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        if: steps.bump.outputs.result != 'norelease'
+        run: npm ci
+
+      - name: Test
+        if: steps.bump.outputs.result != 'norelease'
+        run: npm test
+
+      - name: Bump version
+        if: steps.bump.outputs.result != 'norelease'
+        id: version
+        run: |
+          # version-bump.mjs runs via the `version` npm script hook and syncs .claude-plugin/plugin.json,
+          # whose version is what Claude Code compares when it auto-updates installed copies.
+          npm version ${{ steps.bump.outputs.result }} --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Roll CHANGELOG [Unreleased] into new version
+        if: steps.bump.outputs.result != 'norelease'
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          const path = 'CHANGELOG.md';
+          const version = process.env.NEW_VERSION;
+          const date = new Date().toISOString().slice(0, 10);
+          const content = fs.readFileSync(path, 'utf8');
+          const freshUnreleased = [
+            '## [Unreleased]',
+            '',
+            '### Added',
+            '',
+            '### Changed',
+            '',
+            '### Fixed',
+            '',
+            '### Removed',
+            '',
+            `## [${version}] - ${date}`,
+          ].join('\n');
+          const updated = content.replace(/## \[Unreleased\]/, freshUnreleased);
+          if (updated === content) {
+            console.error('CHANGELOG.md: could not find [Unreleased] heading to roll.');
+            process.exit(1);
+          }
+          fs.writeFileSync(path, updated);
+          EOF
+
+      - name: Extract release notes from CHANGELOG
+        if: steps.bump.outputs.result != 'norelease'
+        id: notes
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          # Written outside the repo so `prettier --check .` never sees it.
+          NOTES_PATH: ${{ runner.temp }}/release-notes.md
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          const version = process.env.NEW_VERSION;
+          const notesPath = process.env.NOTES_PATH;
+          const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split('\n');
+          const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));
+          const kept = [];
+          if (start !== -1) {
+            const rest = lines.slice(start + 1);
+            const end = rest.findIndex((line) => line.startsWith('## ['));
+            const section = end === -1 ? rest : rest.slice(0, end);
+            let i = section.findIndex((line) => line.startsWith('### '));
+            if (i === -1) i = section.length;
+            const preamble = section.slice(0, i).join('\n').trim();
+            if (preamble) kept.push(preamble, '');
+            while (i < section.length) {
+              let j = i + 1;
+              while (j < section.length && !section[j].startsWith('### ')) j++;
+              // Drop Keep-a-Changelog subsections that carry no bullets.
+              const body = section.slice(i + 1, j).join('\n').trim();
+              if (body) kept.push(section[i], '', body, '');
+              i = j;
+            }
+          }
+          const repo = process.env.GITHUB_REPOSITORY;
+          const fallback = `Release ${version}. No changelog entries were recorded for this version; see [CHANGELOG.md](https://github.com/${repo}/blob/v${version}/CHANGELOG.md).`;
+          fs.writeFileSync(notesPath, `${kept.join('\n').trim() || fallback}\n`);
+          EOF
+          echo "path=$NOTES_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Verify formatting after mutations
+        if: steps.bump.outputs.result != 'norelease'
+        # Commits pushed via GITHUB_TOKEN do not retrigger the CI workflow,
+        # so re-run format:check inline to catch any drift introduced by the
+        # version bump or changelog roll before it lands on main.
+        run: npm run format:check
+
+      - name: Commit bump and push tag
+        if: steps.bump.outputs.result != 'norelease'
+        run: |
+          VERSION="${{ steps.version.outputs.new_version }}"
+          git add package.json package-lock.json .claude-plugin/plugin.json CHANGELOG.md
+          git commit -m "chore(release): bump to $VERSION"
+          git tag "v$VERSION"
+          # Push branch and tag together so the tag never appears on the remote without its commit.
+          git push origin main "v$VERSION"
+
+      - name: Publish GitHub release
+        if: steps.bump.outputs.result != 'norelease'
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: ${{ steps.notes.outputs.path }}
+          name: v${{ steps.version.outputs.new_version }}
+          tag_name: v${{ steps.version.outputs.new_version }}
+          draft: false
+          prerelease: false

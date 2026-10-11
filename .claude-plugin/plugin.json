@@ -1,0 +1,18 @@
+{
+  "name": "session-titler",
+  "version": "0.1.0",
+  "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves.",
+  "author": { "name": "Paul Chiu", "url": "https://github.com/paulchiu" },
+  "homepage": "https://github.com/paulchiu/claude-session-titler",
+  "repository": "https://github.com/paulchiu/claude-session-titler",
+  "license": "MIT",
+  "keywords": ["session", "title", "rename"],
+  "userConfig": {
+    "model": {
+      "type": "string",
+      "title": "Model",
+      "description": "Model that writes the titles: an alias such as haiku or sonnet, or a full model id.",
+      "default": "haiku"
+    }
+  }
+}

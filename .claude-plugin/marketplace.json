@@ -1,0 +1,15 @@
+{
+  "name": "claude-session-titler",
+  "owner": {
+    "name": "Paul Chiu",
+    "url": "https://github.com/paulchiu"
+  },
+  "description": "Session titler for Claude Code.",
+  "plugins": [
+    {
+      "name": "session-titler",
+      "source": "./",
+      "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves."
+    }
+  ]
+}
