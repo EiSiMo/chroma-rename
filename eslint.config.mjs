@@ -10,5 +10,5 @@ export default defineConfig(
     files: ['version-bump.mjs', 'eslint.config.mjs'],
     languageOptions: { globals: globals.node },
   },
-  globalIgnores(['node_modules', 'vendor', '.claude-plugin/types', 'coverage']),
+  globalIgnores(['node_modules', 'vendor', 'plugin/.claude-plugin/types', 'coverage']),
 )

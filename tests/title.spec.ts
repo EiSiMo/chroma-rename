@@ -11,7 +11,7 @@ import {
   sanitizeTitle,
   userPrompts,
   type Message,
-} from '../hooks/title.ts'
+} from '../plugin/hooks/title.ts'
 
 const user = (text: string): Message => ({ role: 'user', text })
 const assistant = (text: string): Message => ({ role: 'assistant', text })

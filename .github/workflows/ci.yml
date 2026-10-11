@@ -55,7 +55,7 @@ jobs:
         run: npm install --global @anthropic-ai/claude-code
 
       - name: Validate plugin and marketplace
-        run: claude plugin validate .
+        run: npm run validate
 
       - name: Engine tests
-        run: claude plugin test .
+        run: claude plugin test plugin

@@ -8,19 +8,20 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && tsc -p tests",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:plugin": "claude plugin test .",
-    "validate": "claude plugin validate .",
+    "test:plugin": "claude plugin test plugin",
+    "validate": "claude plugin validate plugin && claude plugin validate .",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run validate && npm run test:plugin",
-    "version": "node version-bump.mjs && git add .claude-plugin/plugin.json"
+    "version": "node version-bump.mjs && git add plugin/.claude-plugin/plugin.json"
   },
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/node": "^24.19.2",
     "eslint": "^9.39.5",
     "globals": "^17.12.0",
     "jiti": "^2.7.0",

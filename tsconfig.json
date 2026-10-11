@@ -12,5 +12,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["vendor", "hooks", "tests", "vitest.config.ts"]
+  "include": ["vendor", "plugin/hooks", "plugin/tests"]
 }

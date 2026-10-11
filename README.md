@@ -1,4 +1,4 @@
-# Session titler
+# Session Titler
 
 Session titler is a Claude Code plugin that names each session after its main piece of work, and renames it when the work changes.
 
@@ -16,7 +16,7 @@ Answer `y` to add the marketplace, then pick the user scope so it runs in every 
 
 ### Auto-update
 
-Claude Code leaves auto-update off for third-party marketplaces. To pick up new releases automatically, run `/plugin`, open the Marketplaces tab, select `claude-session-titler` and choose "Enable auto-update". Each release bumps the version in `.claude-plugin/plugin.json`, which is what Claude Code compares when it updates.
+Claude Code leaves auto-update off for third-party marketplaces. To pick up new releases automatically, run `/plugin`, open the Marketplaces tab, select `claude-session-titler` and choose "Enable auto-update". Each release bumps the version in `plugin/.claude-plugin/plugin.json`, which is what Claude Code compares when it updates.
 
 To update by hand:
 
@@ -31,6 +31,8 @@ When Claude finishes replying, the plugin checks whether the title is due a revi
 Each check sends the model the current title, your first prompt, your 8 most recent prompts and Claude's latest reply, with system reminders and command output stripped. The model is asked for a 3 to 7 word title naming the subject and what is being done to it, and to return the current title unchanged unless the main work has moved on.
 
 The new title is applied when you send your next prompt, through the prompt hook's `sessionTitle` field. Running `/rename` would apply it straight away, but it would also add the command and its output to the conversation Claude reads.
+
+The plugin hooks two events. When a turn completes, it may schedule a check; when you submit a prompt, it may set the session title. It doesn't change your prompt, Claude's replies or anything else in the conversation.
 
 ### Naming a session yourself
 
@@ -62,12 +64,12 @@ npm install
 npm run check
 ```
 
-`npm run check` runs the typecheck, lint, format check, the Vitest specs for `hooks/title.ts`, `claude plugin validate`, and the engine tests in `tests/*.test.ts` through `claude plugin test`.
+`npm run check` runs the typecheck, lint, format check, the Vitest specs in `tests/`, `claude plugin validate` for the plugin and the marketplace, and the engine tests in `plugin/tests/` through `claude plugin test`.
 
 To try a working copy without installing it:
 
 ```bash
-claude --plugin-dir ~/path/to/claude-session-titler
+claude --plugin-dir ~/path/to/claude-session-titler/plugin
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the release process.

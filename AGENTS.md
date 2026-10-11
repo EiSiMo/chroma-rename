@@ -4,16 +4,16 @@
 
 ## 1. Project context
 
-- **Type:** Claude Code plugin (a 'mod': one hooks module, no skills, commands or MCP servers). The repo is also its own marketplace (`.claude-plugin/marketplace.json`, source `./`).
-- **Language:** TypeScript, strict. The engine loads `hooks/register.ts` directly; there is no build step.
+- **Type:** Claude Code plugin (a 'mod': one hooks module, no skills, commands or MCP servers). The repo is also its own marketplace (`.claude-plugin/marketplace.json`, source `./plugin`). Everything the plugin ships lives in `plugin/`; development files stay outside it so the Claude directory validator only scans what installs.
+- **Language:** TypeScript, strict. The engine loads `plugin/hooks/register.ts` directly; there is no build step.
 - **Runtime:** Claude Code's hooks environment: no DOM, no Node. Everything outside the module goes through `$`. Files are ES modules imported with `import` declarations (no `import()`).
 - **API reference:** `vendor/claude-code.d.ts` is the plugin API as Claude Code wrote it (its first line names the version). It is early access and moves between releases; the declaration file is the authority, not memory. Refresh it from a newer Claude Code by loading the `plugin-authoring` skill and copying the `types/claude-code.d.ts` it names.
 - **Package manager:** npm.
 
 ## 2. Architecture
 
-- `hooks/title.ts`: the pure core. Building the title request, cleaning the reply, the check schedule and the per-session record transitions. No `claude-code` imports, so Vitest runs it without the engine.
-- `hooks/register.ts`: the thin shell. Two hooks (`turn.complete` schedules a check, `classic.UserPromptSubmit` applies a pending title through `sessionTitle`) plus the `$.store` reads and writes. Functions that take `$` must be declared at the top of the file, or `claude plugin validate` refuses the module.
+- `plugin/hooks/title.ts`: the pure core. Building the title request, cleaning the reply, the check schedule and the per-session record transitions. No `claude-code` imports, so Vitest runs it without the engine.
+- `plugin/hooks/register.ts`: the thin shell. Two hooks (`turn.complete` schedules a check, `classic.UserPromptSubmit` applies a pending title through `sessionTitle`) plus the `$.store` reads and writes. Functions that take `$` must be declared at the top of the file, or `claude plugin validate` refuses the module.
 - Titles are applied through `sessionTitle` at the next prompt, never by running `/rename`, which writes the command into the conversation the model reads.
 - A session title the plugin did not set means the person named the session; the record is marked `isUserNamed` and the plugin stops for that session.
 
@@ -32,16 +32,16 @@
 
 ## 5. Tests
 
-- `tests/*.spec.ts`: Vitest specs for `hooks/title.ts`. `npm test`.
-- `tests/*.test.ts`: engine tests run by `claude plugin test .` (`npm run test:plugin`). They import from `claude-code/testing`; the test's `on` hooks stand in for the session, store and model beneath the plugin.
+- `tests/*.spec.ts`: Vitest specs for `plugin/hooks/title.ts` and the repo layout (what `plugin/` ships, the icon, the version bump). `npm test`. They have their own `tests/tsconfig.json` with Node types; the root config keeps the hooks free of Node.
+- `plugin/tests/*.test.ts`: engine tests run by `claude plugin test plugin` (`npm run test:plugin`). They live inside `plugin/` because `claude plugin test` only looks there. They import from `claude-code/testing`; the test's `on` hooks stand in for the session, store and model beneath the plugin.
 - Keep the two suffixes apart: Vitest only includes `*.spec.ts`, and `claude plugin test` only picks up `*.test.ts`.
 
 ## 6. Operation manual
 
 - Install: `npm install`
 - Everything: `npm run check` (typecheck, lint, format check, Vitest, validate, engine tests).
-- Try it: `claude --plugin-dir .`
-- Version bump: automated. Every PR carries one of `major`, `minor`, `patch` or `norelease`. On merge, the Release workflow runs `npm version`, whose `version` script syncs `.claude-plugin/plugin.json`, then tags `vX.Y.Z` and publishes a GitHub release. Claude Code updates installed copies only when `plugin.json`'s version changes, so never edit it by hand.
+- Try it: `claude --plugin-dir plugin`
+- Version bump: automated. Every PR carries one of `major`, `minor`, `patch` or `norelease`. On merge, the Release workflow runs `npm version`, whose `version` script syncs `plugin/.claude-plugin/plugin.json`, then tags `vX.Y.Z` and publishes a GitHub release. Claude Code updates installed copies only when `plugin.json`'s version changes, so never edit it by hand.
 - Changelog: add entries under `## [Unreleased]` in `CHANGELOG.md` in each PR. The Release workflow stamps the heading on merge; don't rename it by hand.
 
 ## 7. Git commit convention

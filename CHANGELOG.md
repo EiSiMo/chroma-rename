@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A plugin icon.
+
 ### Changed
+
+- The plugin now ships from the `plugin/` folder, so installs and the Claude directory only see the manifest, icon, hooks and engine tests, not the development files.
+- The README says what the hooks change.
 
 ### Fixed
 

@@ -65,7 +65,7 @@ jobs:
         if: steps.bump.outputs.result != 'norelease'
         id: version
         run: |
-          # version-bump.mjs runs via the `version` npm script hook and syncs .claude-plugin/plugin.json,
+          # version-bump.mjs runs via the `version` npm script hook and syncs plugin/.claude-plugin/plugin.json,
           # whose version is what Claude Code compares when it auto-updates installed copies.
           npm version ${{ steps.bump.outputs.result }} --no-git-tag-version
           NEW_VERSION=$(node -p "require('./package.json').version")
@@ -152,7 +152,7 @@ jobs:
         if: steps.bump.outputs.result != 'norelease'
         run: |
           VERSION="${{ steps.version.outputs.new_version }}"
-          git add package.json package-lock.json .claude-plugin/plugin.json CHANGELOG.md
+          git add package.json package-lock.json plugin/.claude-plugin/plugin.json CHANGELOG.md
           git commit -m "chore(release): bump to $VERSION"
           git tag "v$VERSION"
           # Push branch and tag together so the tag never appears on the remote without its commit.

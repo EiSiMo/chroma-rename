@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "session-titler",
-      "source": "./",
+      "source": "./plugin",
       "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves."
     }
   ]
