@@ -4,7 +4,9 @@ import {
   buildTitlePrompt,
   cleanPrompt,
   isDue,
+  isModelNotFound,
   onChecked,
+  onModelMissing,
   onPrompt,
   sanitizeTitle,
   userPrompts,
@@ -141,6 +143,12 @@ describe('onPrompt', () => {
     })
   })
 
+  it('keeps the missing-model warning when it applies a title', () => {
+    expect(
+      onPrompt({ pending: 'New title', isModelWarned: true }, undefined).record.isModelWarned,
+    ).toBe(true)
+  })
+
   it('replaces its own earlier title', () => {
     const outcome = onPrompt({ applied: 'Old', pending: 'New', checkedAt: 4 }, 'Old')
     expect(outcome.title).toBe('New')
@@ -176,5 +184,42 @@ describe('onChecked', () => {
   it('queues nothing when the title is unchanged or missing', () => {
     expect(onChecked({ applied: 'Same' }, 4, 'Same').pending).toBeUndefined()
     expect(onChecked({ applied: 'Same', pending: 'Stale' }, 4, null).pending).toBeUndefined()
+  })
+})
+
+describe('isModelNotFound', () => {
+  it('spots a model the API does not know', () => {
+    expect(
+      isModelNotFound({ isAnswered: false, reason: 'api-error', error: 'model_not_found' }),
+    ).toBe(true)
+  })
+
+  it.each([
+    { isAnswered: false, reason: 'api-error', error: 'invalid_request' },
+    { isAnswered: false, reason: 'aborted' },
+    { isAnswered: true },
+  ])('ignores %j', (reply) => {
+    expect(isModelNotFound(reply)).toBe(false)
+  })
+})
+
+describe('onModelMissing', () => {
+  it('warns with the model name and where to change it', () => {
+    const { warning } = onModelMissing({}, 1, 'haikoo')
+    expect(warning).toBe(
+      'session-titler: model "haikoo" not found; check its Configure options in /plugin',
+    )
+  })
+
+  it('warns once per session', () => {
+    expect(onModelMissing({ isModelWarned: true }, 2, 'haikoo').warning).toBeUndefined()
+  })
+
+  it('records the check and the warning', () => {
+    expect(onModelMissing({ applied: 'Old', pending: 'Stale' }, 4, 'haikoo').record).toEqual({
+      applied: 'Old',
+      checkedAt: 4,
+      isModelWarned: true,
+    })
   })
 })

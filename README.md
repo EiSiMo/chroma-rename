@@ -42,7 +42,7 @@ If you name a session yourself, with `/rename` or `claude --name`, the plugin se
 | ------- | ------- | --------------------------------------------------------------------------------------- |
 | `model` | `haiku` | Model that writes the titles: an alias such as `haiku` or `sonnet`, or a full model id. |
 
-Change it from `/plugin` (**Installed**, select `session-titler`, **Configure options**).
+Change it from `/plugin` (**Installed**, select `session-titler`, **Configure options**). Use an alias or a model id, not the display name (`haiku`, not `Haiku 5.5`). If Claude Code can't find the model, the plugin says so in a toast once per session and leaves the session untitled.
 
 Each check is one small request (a few thousand input tokens, a handful of output tokens). With the default model and the check schedule above, a 40-prompt session makes 8 of them.
 

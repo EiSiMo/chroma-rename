@@ -16,6 +16,8 @@ export type SessionRecord = {
   readonly checkedAt?: number
   /** Set once the person names the session themselves; the titler then stays out. */
   readonly isUserNamed?: boolean
+  /** Set once the person has been told the configured model was not found. */
+  readonly isModelWarned?: boolean
 }
 
 export const MAX_GAP = 8
@@ -156,7 +158,10 @@ export const onPrompt = (
   if (record.pending === undefined || record.pending === sessionTitle) {
     return { record: { ...record, pending: undefined } }
   }
-  return { record: { applied: record.pending, checkedAt: record.checkedAt }, title: record.pending }
+  return {
+    record: { ...record, applied: record.pending, pending: undefined },
+    title: record.pending,
+  }
 }
 
 /** Records a finished check at `turns` prompts and the title it produced, if any. */
@@ -168,4 +173,34 @@ export const onChecked = (
   ...record,
   checkedAt: turns,
   pending: title !== null && title !== record.applied ? title : undefined,
+})
+
+/** The parts of a model reply that say why it failed, if it did. */
+export type ReplyStatus = {
+  readonly isAnswered: boolean
+  readonly reason?: string
+  readonly error?: string
+}
+
+/** Whether the reply failed because the API does not know the model asked for. */
+export const isModelNotFound = (reply: ReplyStatus): boolean =>
+  !reply.isAnswered && reply.reason === 'api-error' && reply.error === 'model_not_found'
+
+export type CheckOutcome = { readonly record: SessionRecord; readonly warning?: string }
+
+/**
+ * Records a check whose model was not found. The warning is given once per
+ * session, since every later check fails the same way until the setting changes.
+ */
+export const onModelMissing = (
+  record: SessionRecord,
+  turns: number,
+  model: string,
+): CheckOutcome => ({
+  record: { ...onChecked(record, turns, null), isModelWarned: true },
+  ...(record.isModelWarned
+    ? {}
+    : {
+        warning: `session-titler: model "${model}" not found; check its Configure options in /plugin`,
+      }),
 })

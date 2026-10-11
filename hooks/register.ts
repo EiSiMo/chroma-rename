@@ -3,7 +3,9 @@ import {
   SYSTEM_PROMPT,
   buildTitlePrompt,
   isDue,
+  isModelNotFound,
   onChecked,
+  onModelMissing,
   onPrompt,
   sanitizeTitle,
   type SessionRecord,
@@ -52,8 +54,15 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
     maxTokens: 40,
     timeoutMs: TIMEOUT_MS,
   })
-  const title = reply.isAnswered ? sanitizeTitle(reply.text) : null
-  await writeRecord($, sessionId, onChecked(await readRecord($, sessionId), turns, title))
+  const latest = await readRecord($, sessionId)
+  if (!isModelNotFound(reply)) {
+    const title = reply.isAnswered ? sanitizeTitle(reply.text) : null
+    await writeRecord($, sessionId, onChecked(latest, turns, title))
+    return
+  }
+  const { record: checked, warning } = onModelMissing(latest, turns, model)
+  await writeRecord($, sessionId, checked)
+  if (warning !== undefined) $.ui.toast(warning)
 }
 
 export const register: Register = (on, options) => {

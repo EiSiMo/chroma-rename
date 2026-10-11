@@ -1,5 +1,5 @@
 import type { Engine } from 'claude-code/testing'
-import type { On, SessionMessage } from 'claude-code'
+import type { ModelCompleteResult, On, SessionMessage } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 const SESSION_ID = 'session-1'
@@ -16,22 +16,44 @@ const USAGE = {
   cache_creation_input_tokens: 0,
 }
 
-type World = { readonly asked: string[] }
+const NOT_FOUND: ModelCompleteResult = {
+  isAnswered: false,
+  reason: 'api-error',
+  status: 404,
+  error: 'model_not_found',
+  usage: USAGE,
+}
 
-/** Stands in for the session and the model beneath the plugin, recording each title request. */
-const world = (on: On, reply: string, turns: number): World => {
+type World = { readonly asked: string[]; readonly toasts: string[] }
+
+/**
+ * Stands in for the session and the model beneath the plugin, recording each
+ * title request and toast. A string reply is the model answering with it.
+ */
+const world = (
+  on: On,
+  reply: string | ModelCompleteResult,
+  turns: () => number = () => 1,
+): World => {
   const asked: string[] = []
+  const toasts: string[] = []
   mock.store(on)
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
   on('turn.complete', () => ({ text: '' }))
   on('classic.UserPromptSubmit', () => ({}))
   on('session.id', () => ({ value: SESSION_ID }))
-  on('session.turns', () => ({ value: turns }))
+  on('session.turns', () => ({ value: turns() }))
   on('session.messages', () => ({ value: MESSAGES }))
   on('model.complete', (_$, e) => {
     asked.push(e.prompt)
-    return { value: { isAnswered: true, text: reply, usage: USAGE } }
+    return {
+      value: typeof reply === 'string' ? { isAnswered: true, text: reply, usage: USAGE } : reply,
+    }
   })
-  return { asked }
+  return { asked, toasts }
 }
 
 const completeTurn = async ($: Engine, clock: { advance: (ms: number) => Promise<void> }) => {
@@ -53,7 +75,7 @@ const submit = ($: Engine, sessionTitle?: string) =>
   })
 
 test('titles the session at the prompt after the first turn', async ($, on) => {
-  const { asked } = world(on, '"Fix login redirect loop after reset."', 1)
+  const { asked } = world(on, '"Fix login redirect loop after reset."')
   const clock = mock.clock(on)
 
   await completeTurn($, clock)
@@ -65,7 +87,7 @@ test('titles the session at the prompt after the first turn', async ($, on) => {
 })
 
 test('leaves a session the person named alone', async ($, on) => {
-  const { asked } = world(on, 'Fix login redirect loop', 1)
+  const { asked } = world(on, 'Fix login redirect loop')
   const clock = mock.clock(on)
 
   const named = await submit($, 'my own name')
@@ -78,7 +100,7 @@ test('leaves a session the person named alone', async ($, on) => {
 })
 
 test('does not re-apply a title the session already has', async ($, on) => {
-  world(on, 'Fix login redirect loop', 1)
+  world(on, 'Fix login redirect loop')
   const clock = mock.clock(on)
 
   await completeTurn($, clock)
@@ -88,3 +110,52 @@ test('does not re-apply a title the session already has', async ($, on) => {
   expect(first.sessionTitle).toBe('Fix login redirect loop')
   expect(second.sessionTitle).toBe(undefined)
 })
+
+test(
+  'says when the configured model is not found',
+  { options: { model: 'haikoo' } },
+  async ($, on) => {
+    const { toasts } = world(on, NOT_FOUND)
+    const clock = mock.clock(on)
+
+    await completeTurn($, clock)
+
+    expect(toasts.length).toBe(1)
+    expect(toasts[0]).toContain('"haikoo"')
+    expect(toasts[0]).toContain('Configure options')
+  },
+)
+
+test('says so once per session', async ($, on) => {
+  let turns = 1
+  const { asked, toasts } = world(on, NOT_FOUND, () => turns)
+  const clock = mock.clock(on)
+
+  await completeTurn($, clock)
+  turns = 2
+  await completeTurn($, clock)
+
+  expect(asked.length).toBe(2)
+  expect(toasts.length).toBe(1)
+})
+
+const OTHER_FAILURES: readonly [string, ModelCompleteResult][] = [
+  ['aborted', { isAnswered: false, reason: 'aborted', usage: USAGE }],
+  ['empty', { isAnswered: false, reason: 'empty-reply', usage: USAGE }],
+  [
+    'rate limited',
+    { isAnswered: false, reason: 'api-error', status: 429, error: 'rate_limit', usage: USAGE },
+  ],
+]
+
+for (const [label, reply] of OTHER_FAILURES) {
+  test(`stays quiet when the reply is ${label}`, async ($, on) => {
+    const { asked, toasts } = world(on, reply)
+    const clock = mock.clock(on)
+
+    await completeTurn($, clock)
+
+    expect(asked.length).toBe(1)
+    expect(toasts.length).toBe(0)
+  })
+}
