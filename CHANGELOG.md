@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+### Removed
+
+## [0.1.1] - 2026-10-11
+
+### Added
+
+### Changed
+
+### Fixed
+
 - A `model` setting that names no model (a typo, or a display name such as `Haiku 5.5` instead of `haiku`) now shows a toast once per session instead of silently leaving sessions untitled.
 
 ### Removed
