@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+### Removed
+
+## [0.2.1] - 2026-10-23
+
+### Added
+
+### Changed
+
+### Fixed
+
 - Works on Windows: the plugin no longer runs `sh`, `mkdir` or `rmdir`. Colors are shared through one small file per color instead of a locked file.
 
 ### Removed
