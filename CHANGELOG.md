@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A forked session gets its own name and color instead of keeping its parent's; a color the person set on the parent stays.
+- A resumed session claims its color again, so a session started meanwhile does not take the same one.
+
 ### Removed
 
 ## [0.1.2] - 2026-10-11

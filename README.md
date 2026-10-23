@@ -11,6 +11,7 @@ It started as a fork of [paulchiu/claude-session-titler](https://github.com/paul
 - Open sessions share their colors through one file, so no two live sessions get the same one. When all 8 are taken, the wanted color is shared.
 - Renaming is conservative: the model answers `KEEP` unless the session has clearly switched topics.
 - `/clear` starts over: the color claim is released, and the next prompt gets a fresh name and color.
+- A fork (`--fork-session`) starts over too, so it does not keep its parent's name and color. A resumed session claims its color again.
 
 ## Install
 

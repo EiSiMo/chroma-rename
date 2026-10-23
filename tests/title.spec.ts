@@ -14,6 +14,8 @@ import {
   onChecked,
   onModelMissing,
   onClear,
+  forkParent,
+  onFork,
   onPrompt,
   onRan,
   parseReply,
@@ -234,6 +236,35 @@ describe('onClear', () => {
   it('starts over and claims the title the session still shows', () => {
     expect(onClear('old-name')).toEqual({ applied: 'old-name' })
     expect(onClear(undefined)).toEqual({})
+  })
+})
+
+describe('forkParent', () => {
+  it('finds the newest record whose applied name the fork inherited', () => {
+    const older = { applied: 'rust-rewrite', color: 'red' as const }
+    const newer = { applied: 'rust-rewrite', color: 'blue' as const }
+    expect(forkParent([older, { applied: 'other' }, newer], 'rust-rewrite')).toBe(newer)
+  })
+
+  it('finds none for a name the person gave, or no name', () => {
+    expect(forkParent([{ applied: 'x', isUserNamed: true }], 'x')).toBeUndefined()
+    expect(forkParent([{ applied: 'x' }], 'y')).toBeUndefined()
+    expect(forkParent([{ applied: '' }], '')).toBeUndefined()
+    expect(forkParent([{ applied: 'x' }], undefined)).toBeUndefined()
+  })
+})
+
+describe('onFork', () => {
+  it("starts over and drops the plugin's color", () => {
+    expect(onFork({ applied: 'x', color: 'red', checkedAt: 4 }, 'x')).toEqual({ applied: 'x' })
+  })
+
+  it('keeps a color the person set', () => {
+    expect(onFork({ applied: 'x', color: 'pink', isColorUserSet: true }, 'x')).toEqual({
+      applied: 'x',
+      color: 'pink',
+      isColorUserSet: true,
+    })
   })
 })
 

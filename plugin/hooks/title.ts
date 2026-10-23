@@ -276,6 +276,27 @@ export const onPrompt = (
 export const onClear = (sessionTitle: string | undefined): SessionRecord =>
   sessionTitle === undefined ? {} : { applied: sessionTitle }
 
+/**
+ * The record a fork came from: the newest one whose name the plugin applied
+ * and the fork inherited. `undefined` when the person named it, or no name came along.
+ */
+export const forkParent = (
+  records: readonly SessionRecord[],
+  sessionTitle: string | undefined,
+): SessionRecord | undefined =>
+  sessionTitle === undefined || sessionTitle === ''
+    ? undefined
+    : [...records].reverse().find((r) => !r.isUserNamed && r.applied === sessionTitle)
+
+/**
+ * The record of a fork of `parent`: a fresh start like `/clear`, so the fork
+ * gets its own name and color, except that a color the person set stays theirs.
+ */
+export const onFork = (parent: SessionRecord, sessionTitle: string | undefined): SessionRecord => ({
+  ...onClear(sessionTitle),
+  ...(parent.isColorUserSet ? { isColorUserSet: true, color: parent.color } : {}),
+})
+
 /** Records a finished check at `turns` prompts, with the name and color it settled on. */
 export const onChecked = (
   record: SessionRecord,

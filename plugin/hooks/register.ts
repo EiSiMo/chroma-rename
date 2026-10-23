@@ -11,6 +11,8 @@ import {
   isModelNotFound,
   onChecked,
   onClear,
+  forkParent,
+  onFork,
   onModelMissing,
   onPrompt,
   onRan,
@@ -33,6 +35,14 @@ const keyFor = (sessionId: string): string => `${KEY_PREFIX}${sessionId}`
 
 const readRecord = async ($: EngineInterface, sessionId: string): Promise<SessionRecord> =>
   ((await $.store.get(keyFor(sessionId))) as SessionRecord | undefined) ?? {}
+
+/** Every session's record, oldest first. */
+const readRecords = async ($: EngineInterface): Promise<SessionRecord[]> => {
+  const keys = (await $.store.keys()).filter((k) => k.startsWith(KEY_PREFIX))
+  return Promise.all(
+    keys.map(async (k) => ((await $.store.get(k)) as SessionRecord | undefined) ?? {}),
+  )
+}
 
 /** Writes the record as the newest key, dropping the oldest sessions past `MAX_SESSIONS`. */
 const writeRecord = async (
@@ -358,11 +368,27 @@ export const register: Register = (on, options) => {
     return title === undefined ? result : { ...result, sessionTitle: title }
   }).catch(($, e, next) => next(e))
 
+  /**
+   * `/clear` and a fork of a session the plugin named start over; a fork
+   * inherits the name and color, which would make two sessions look alike.
+   * A resumed session claims its color again, since its claim lapsed when it ended.
+   */
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
-    if (e.source !== 'clear') return result
-    await writeRecord($, e.session_id, onClear(e.session_title))
-    await claim($, e.session_id, () => undefined)
+    if (e.source === 'clear') {
+      await writeRecord($, e.session_id, onClear(e.session_title))
+      await claim($, e.session_id, () => undefined)
+    } else if (e.source === 'fork') {
+      const parent = forkParent(await readRecords($), e.session_title)
+      if (parent !== undefined) {
+        const record = onFork(parent, e.session_title)
+        await writeRecord($, e.session_id, record)
+        await claim($, e.session_id, () => record.color)
+      }
+    } else if (e.source === 'resume') {
+      const { color } = await readRecord($, e.session_id)
+      if (color !== undefined) await claim($, e.session_id, () => color)
+    }
     return result
   }).catch(($, e, next) => next(e))
 }

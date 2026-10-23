@@ -32,6 +32,8 @@ type World = {
   readonly toasts: string[]
   readonly commands: string[]
   readonly files: Map<string, string>
+  /** Makes the session the plugin sees the one with `id`, as a fork does. */
+  readonly becomeSession: (id: string) => void
 }
 
 /** One live process file per session id, as Claude Code keeps them. */
@@ -51,6 +53,7 @@ const world = (
   const toasts: string[] = []
   const commands: string[] = []
   const files = liveSessions([SESSION_ID])
+  let sessionId = SESSION_ID
   mock.store(on)
   on('process.run', () => ({
     value: {
@@ -91,7 +94,7 @@ const world = (
   })
   on('turn.complete', () => ({ text: '' }))
   on('classic.UserPromptSubmit', () => ({}))
-  on('session.id', () => ({ value: SESSION_ID }))
+  on('session.id', () => ({ value: sessionId }))
   on('session.turns', () => ({ value: turns() }))
   on('session.messages', () => ({ value: MESSAGES }))
   on('model.complete', (_$, e) => {
@@ -103,7 +106,15 @@ const world = (
           : { isAnswered: true, text: typeof reply === 'string' ? reply : reply(), usage: USAGE },
     }
   })
-  return { asked, toasts, commands, files }
+  return {
+    asked,
+    toasts,
+    commands,
+    files,
+    becomeSession: (id) => {
+      sessionId = id
+    },
+  }
 }
 
 const completeTurn = async ($: Engine, clock: { advance: (ms: number) => Promise<void> }) => {
@@ -117,9 +128,9 @@ const completeTurn = async ($: Engine, clock: { advance: (ms: number) => Promise
   await clock.advance(1)
 }
 
-const submit = ($: Engine, sessionTitle?: string) =>
+const submit = ($: Engine, sessionTitle?: string, sessionId = SESSION_ID) =>
   $.classic.UserPromptSubmit({
-    session_id: SESSION_ID,
+    session_id: sessionId,
     prompt: 'next',
     ...(sessionTitle === undefined ? {} : { session_title: sessionTitle }),
   })
@@ -313,4 +324,62 @@ test('starts over after /clear', async ($, on) => {
   expect(asked[1]).toContain('Color rules')
   expect(result.sessionTitle).toBe('rust-rewrite')
   expect(commands).toEqual(['/color red', '/color orange'])
+})
+
+test('gives a fork its own name and color', async ($, on) => {
+  let reply = 'login-redirect-fix red'
+  const { commands, files, becomeSession } = world(on, () => reply)
+  const clock = mock.clock(on)
+  on('classic.SessionStart', () => ({}))
+
+  await submit($)
+  await completeTurn($, clock)
+  for (const [path, text] of liveSessions([SESSION_ID, 'fork'])) files.set(path, text)
+  becomeSession('fork')
+  await $.classic.SessionStart({
+    session_id: 'fork',
+    source: 'fork',
+    session_title: 'login-redirect-fix',
+  })
+
+  reply = 'cookie-cleanup red'
+  const result = await submit($, 'login-redirect-fix', 'fork')
+  await completeTurn($, clock)
+
+  expect(result.sessionTitle).toBe('cookie-cleanup')
+  expect(commands).toEqual(['/color red', '/color blue'])
+  expect(JSON.parse(files.get(CLAIMS) ?? '{}')).toEqual({ [SESSION_ID]: 'red', fork: 'blue' })
+})
+
+test('leaves a fork of a session the person named alone', async ($, on) => {
+  const { asked, commands, becomeSession } = world(on, 'cookie-cleanup blue')
+  const clock = mock.clock(on)
+  on('classic.SessionStart', () => ({}))
+
+  becomeSession('fork')
+  await $.classic.SessionStart({ session_id: 'fork', source: 'fork', session_title: 'my own name' })
+  const result = await submit($, 'my own name', 'fork')
+  await completeTurn($, clock)
+
+  expect(result.sessionTitle).toBe(undefined)
+  expect(asked.length).toBe(0)
+  expect(commands).toEqual([])
+})
+
+test('claims its color again when resumed', async ($, on) => {
+  const { commands, files } = world(on, 'login-redirect-fix red')
+  const clock = mock.clock(on)
+  on('classic.SessionStart', () => ({}))
+
+  await submit($)
+  await completeTurn($, clock)
+  files.set(CLAIMS, JSON.stringify({}))
+  await $.classic.SessionStart({
+    session_id: SESSION_ID,
+    source: 'resume',
+    session_title: 'login-redirect-fix',
+  })
+
+  expect(JSON.parse(files.get(CLAIMS) ?? '{}')).toEqual({ [SESSION_ID]: 'red' })
+  expect(commands).toEqual(['/color red'])
 })
