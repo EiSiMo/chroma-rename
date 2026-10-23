@@ -41,9 +41,27 @@ export type SessionRecord = {
   readonly isModelWarned?: boolean
 }
 
+/** How names are written; the `style` setting picks one. */
+export const STYLES = [
+  'kebab-case',
+  'snake_case',
+  'camelCase',
+  'PascalCase',
+  'Title Case',
+  'Sentence case',
+  'free text',
+] as const
+export type Style = (typeof STYLES)[number]
+export const DEFAULT_STYLE: Style = 'kebab-case'
+
+export const isStyle = (value: unknown): value is Style =>
+  (STYLES as readonly unknown[]).includes(value)
+
 export const MAX_GAP = 8
 export const MAX_WORDS = 3
 export const MAX_NAME_LENGTH = 40
+export const MAX_FREE_WORDS = 6
+export const MAX_FREE_LENGTH = 60
 export const MAX_RAN = 20
 
 const FIRST_PROMPT_CHARS = 800
@@ -94,6 +112,37 @@ export type Current = {
   readonly isColorFixed?: boolean
 }
 
+const capitalize = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1)
+
+/** Writes lowercase words in a style other than free text. */
+export const formatWords = (words: readonly string[], style: Style): string => {
+  switch (style) {
+    case 'snake_case':
+      return words.join('_')
+    case 'camelCase':
+      return words.map((w, i) => (i === 0 ? w : capitalize(w))).join('')
+    case 'PascalCase':
+      return words.map(capitalize).join('')
+    case 'Title Case':
+      return words.map(capitalize).join(' ')
+    case 'Sentence case':
+      return capitalize(words.join(' '))
+    default:
+      return words.join('-')
+  }
+}
+
+const styleRules = (style: Style): string[] =>
+  style === 'free text'
+    ? [
+        `- A short phrase of 2 to ${MAX_FREE_WORDS} words, written naturally, for example "Rewrite the parser in Rust" or "Fix login redirect".`,
+        '- Write it in the language the person writes in: a German conversation gets a German name such as "Karten-Export für Berichte". Keep umlauts and other letters as they are.',
+      ]
+    : [
+        `- 1 to ${MAX_WORDS} words in ${style}, for example "${formatWords(['rust', 'rewrite'], style)}" or "${formatWords(['login', 'redirect', 'fix'], style)}".`,
+        `- Write it in the language the person writes in: a German conversation gets a German name such as "${formatWords(['karten', 'export'], style)}". Keep umlauts and other letters as they are ("${formatWords(['übersicht', 'größe'], style)}", not "${formatWords(['uebersicht', 'groesse'], style)}").`,
+      ]
+
 /**
  * The request for a name, and for a color while the session has none: the
  * rules, the current name, the colors still free, the opening prompt, the
@@ -104,6 +153,7 @@ export const buildTitlePrompt = (
   messages: readonly Message[],
   current: Current,
   free: readonly Color[],
+  style: Style = DEFAULT_STYLE,
 ): string | null => {
   const [first, ...rest] = userPrompts(messages)
   if (first === undefined) return null
@@ -121,8 +171,7 @@ export const buildTitlePrompt = (
       : 'Reply with exactly one line: "<name>", or "KEEP" to keep the current name.',
     '',
     'Name rules:',
-    `- 1 to ${MAX_WORDS} words in kebab-case, all lowercase, for example "rust-rewrite" or "login-redirect-fix".`,
-    '- Write it in the language the person writes in: a German conversation gets a German name such as "karten-export". Keep umlauts and other letters as they are ("übersicht-größe", not "uebersicht-groesse").',
+    ...styleRules(style),
     '- Name what the person is doing in this session, judged from their prompts. Claude\'s reply is context only: asking which tests fail is "failing-tests", not the module the answer happens to discuss.',
     '- Name the main piece of work, not the latest prompt. Side questions and follow-ups do not change the topic.',
     '- Leave out the project or repository name unless it is the subject.',
@@ -160,22 +209,44 @@ export const buildTitlePrompt = (
 
 export const isColor = (word: string): word is Color => (COLORS as readonly string[]).includes(word)
 
+/** Drops whole words from the end until the name fits `max`, then cuts what is left. */
+const fit = (
+  words: readonly string[],
+  join: (w: readonly string[]) => string,
+  max: number,
+): string => {
+  let kept = words
+  while (kept.length > 1 && join(kept).length > max) kept = kept.slice(0, -1)
+  return join(kept).slice(0, max)
+}
+
 /**
- * Reduces a name to lowercase kebab-case of at most `MAX_WORDS` words, letters
- * of any script kept, or `null` when nothing usable is left.
+ * Reduces a name to the style: at most `MAX_WORDS` words, letters of any
+ * script kept, or for free text the phrase as written, at most
+ * `MAX_FREE_WORDS` words. `null` when nothing usable is left.
  */
-export const sanitizeName = (raw: string): string | null => {
-  const words = raw
-    .toLowerCase()
-    .replace(/^name\s*:\s*/, '')
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w !== '')
-    .slice(0, MAX_WORDS)
-  let name = words.join('-')
-  while (name.length > MAX_NAME_LENGTH && name.includes('-')) {
-    name = name.slice(0, name.lastIndexOf('-'))
-  }
-  name = name.slice(0, MAX_NAME_LENGTH)
+export const sanitizeName = (raw: string, style: Style = DEFAULT_STYLE): string | null => {
+  const text = raw.replace(/^name\s*:\s*/i, '')
+  const name =
+    style === 'free text'
+      ? fit(
+          text
+            .split(/\s+/)
+            .filter((w) => w !== '')
+            .slice(0, MAX_FREE_WORDS),
+          (w) => w.join(' '),
+          MAX_FREE_LENGTH,
+        )
+      : fit(
+          text
+            .replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter((w) => w !== '')
+            .slice(0, MAX_WORDS),
+          (w) => formatWords(w, style),
+          MAX_NAME_LENGTH,
+        )
   return name.length < 3 ? null : name
 }
 
@@ -183,19 +254,19 @@ export type Reply =
   | { readonly kind: 'keep' }
   | { readonly kind: 'name'; readonly name: string; readonly color?: Color }
 
-/** Reads the model's line: `KEEP`, or a name followed by a color, or `null`. */
-export const parseReply = (raw: string): Reply | null => {
+/** Reads the model's line: `KEEP`, or a name in the style followed by a color, or `null`. */
+export const parseReply = (raw: string, style: Style = DEFAULT_STYLE): Reply | null => {
   const line = raw
     .split('\n')
     .map((l) => l.trim().replace(/^["'`*_]+|["'`*_.]+$/g, ''))
     .find((l) => l !== '')
   if (line === undefined) return null
-  if (/^keep\b/i.test(line)) return { kind: 'keep' }
+  if (/^keep$/i.test(line)) return { kind: 'keep' }
 
   const words = line.split(/\s+/)
   const last = words.at(-1)?.toLowerCase() ?? ''
   const color = isColor(last) ? last : undefined
-  const name = sanitizeName((color === undefined ? words : words.slice(0, -1)).join(' '))
+  const name = sanitizeName((color === undefined ? words : words.slice(0, -1)).join(' '), style)
   if (name === null) return null
   return color === undefined ? { kind: 'name', name } : { kind: 'name', name, color }
 }

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   COLORS,
+  MAX_FREE_LENGTH,
   MAX_NAME_LENGTH,
+  STYLES,
   buildTitlePrompt,
+  formatWords,
   colorRowIn,
   availableColors,
   onUserColor,
@@ -65,6 +68,13 @@ describe('userPrompts', () => {
 })
 
 describe('buildTitlePrompt', () => {
+  it.each(STYLES)('asks for names in %s', (style) => {
+    const prompt = buildTitlePrompt([user('hi there')], {}, COLORS, style) ?? ''
+    expect(prompt).toContain(
+      style === 'free text' ? 'written naturally' : `"${formatWords(['rust', 'rewrite'], style)}"`,
+    )
+  })
+
   it('returns null before the person has typed anything', () => {
     expect(buildTitlePrompt([assistant('hello')], {}, COLORS)).toBeNull()
   })
@@ -140,6 +150,39 @@ describe('sanitizeName', () => {
   })
 })
 
+describe('formatWords', () => {
+  it.each([
+    ['kebab-case', 'login-redirect-fix'],
+    ['snake_case', 'login_redirect_fix'],
+    ['camelCase', 'loginRedirectFix'],
+    ['PascalCase', 'LoginRedirectFix'],
+    ['Title Case', 'Login Redirect Fix'],
+    ['Sentence case', 'Login redirect fix'],
+  ] as const)('writes %s', (style, expected) => {
+    expect(formatWords(['login', 'redirect', 'fix'], style)).toBe(expected)
+  })
+})
+
+describe('sanitizeName in a style', () => {
+  it('reads a name written in another style', () => {
+    expect(sanitizeName('loginRedirectFix', 'snake_case')).toBe('login_redirect_fix')
+    expect(sanitizeName('Übersicht Größe', 'camelCase')).toBe('übersichtGröße')
+  })
+
+  it('keeps free text as written, up to six words', () => {
+    expect(sanitizeName('Fix the  login redirect', 'free text')).toBe('Fix the login redirect')
+    expect(sanitizeName('one two three four five six seven', 'free text')).toBe(
+      'one two three four five six',
+    )
+  })
+
+  it('cuts long free text at a word', () => {
+    const name = sanitizeName(`${'a'.repeat(30)} ${'b'.repeat(30)} c`, 'free text') ?? ''
+    expect(name).toBe('a'.repeat(30))
+    expect(name.length).toBeLessThanOrEqual(MAX_FREE_LENGTH)
+  })
+})
+
 describe('parseReply', () => {
   it.each([
     ['rust-rewrite orange', { kind: 'name', name: 'rust-rewrite', color: 'orange' }],
@@ -153,6 +196,18 @@ describe('parseReply', () => {
 
   it.each(['', ' \n ', 'ok red'])('rejects %j', (raw) => {
     expect(parseReply(raw)).toBeNull()
+  })
+
+  it('reads a name starting with keep as a name', () => {
+    expect(parseReply('keep-alive-fix')).toEqual({ kind: 'name', name: 'keep-alive-fix' })
+  })
+
+  it('reads free text', () => {
+    expect(parseReply('Fix the login redirect blue', 'free text')).toEqual({
+      kind: 'name',
+      name: 'Fix the login redirect',
+      color: 'blue',
+    })
   })
 })
 

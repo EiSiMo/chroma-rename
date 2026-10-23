@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A `style` setting for how names are written: kebab-case, snake_case, camelCase, PascalCase, Title Case, Sentence case or free text.
 - A `/color` you run yourself is respected: the plugin claims that color for the session and never changes it.
 - The colors file is written under a lock, so sessions starting together never pick the same color.
 - With all 8 colors held, a new session shares the color of a session idle for 2 hours or more.
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The README covers only install, settings and how to keep your own name or color.
 - Forked from session-titler and renamed to tintname.
 - Names are 1 to 3 words of lowercase kebab-case, in the chat's language, umlauts kept.
 - Renames only on a clear topic switch; the model answers `KEEP` otherwise.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- A name that starts with "keep", such as `keep-alive-fix`, is no longer read as `KEEP`.
 - A forked session gets its own name and color instead of keeping its parent's; a color the person set on the parent stays.
 - A resumed session claims its color again, so a session started meanwhile does not take the same one.
 

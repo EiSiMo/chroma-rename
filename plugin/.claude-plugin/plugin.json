@@ -1,7 +1,7 @@
 {
   "name": "tintname",
   "version": "0.1.4",
-  "description": "Names Claude Code sessions in short kebab-case, in the chat's language, and gives each open session its own prompt bar color.",
+  "description": "Names Claude Code sessions in short kebab-case or a style you pick, in the chat's language, and gives each open session its own prompt bar color.",
   "author": { "name": "Moritz", "url": "https://github.com/EiSiMo" },
   "homepage": "https://github.com/EiSiMo/tintname",
   "repository": "https://github.com/EiSiMo/tintname",
@@ -13,6 +13,21 @@
       "title": "Model",
       "description": "Model that writes the names and picks the colors: an alias such as haiku or sonnet, or a full model id.",
       "default": "haiku"
+    },
+    "style": {
+      "type": "string",
+      "title": "Name style",
+      "description": "How names are written: kebab-case, snake_case, camelCase, PascalCase, Title Case, Sentence case, or free text (a short natural phrase).",
+      "options": [
+        "kebab-case",
+        "snake_case",
+        "camelCase",
+        "PascalCase",
+        "Title Case",
+        "Sentence case",
+        "free text"
+      ],
+      "default": "kebab-case"
     }
   }
 }
