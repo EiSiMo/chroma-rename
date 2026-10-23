@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.2.0] - 2026-10-23
+
+### Added
+
 - A `style` setting for how names are written: kebab-case, snake_case, camelCase, PascalCase, Title Case, Sentence case or free text.
 - A `/color` you run yourself is respected: the plugin claims that color for the session and never changes it.
 - The colors file is written under a lock, so sessions starting together never pick the same color.
