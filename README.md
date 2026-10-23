@@ -2,6 +2,8 @@
 
 tintname is a Claude Code plugin that gives every session a short kebab-case name and its own prompt bar color, so a handful of open sessions stay easy to tell apart.
 
+![tintname names a Rust session rust-zeilen-lesen in orange, then after /clear a globe session drehbarer-globus in blue](docs/demo.gif)
+
 It started as a fork of [paulchiu/claude-session-titler](https://github.com/paulchiu/claude-session-titler) and keeps its scheduling and hooks, with these changes:
 
 - Names are 1 to 3 words of lowercase kebab-case (`rust-rewrite`, `übersicht-größe`), in the language the chat is in, umlauts kept.
