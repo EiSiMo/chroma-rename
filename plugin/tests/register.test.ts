@@ -590,7 +590,35 @@ test('logs what it asked and decided to its own file', async ($, on) => {
 
   const log = files.get(`${DIR}/tintname/tintname.log`) ?? ''
   expect(log).toContain('ask haiku at turn 1')
+  expect(log).toContain('earlier []')
   expect(log).toContain('"login-redirect-fix red"')
   expect(log).toContain('name login-redirect-fix, color red')
   expect(log).toContain('applied name login-redirect-fix')
+})
+
+test('clears the claims of ended sessions when a session starts', async ($, on) => {
+  const { files } = world(on, 'login-redirect-fix red')
+  const clock = mock.clock(on)
+  on('classic.SessionStart', () => ({}))
+  for (const [path, text] of liveSessions([SESSION_ID, 'open'])) files.set(path, text)
+  seedClaims(files, { open: 'red', ended: 'blue', gone: 'red' })
+
+  await drive(clock, $.classic.SessionStart({ session_id: SESSION_ID, source: 'startup' }))
+
+  expect(claimsIn(files)).toEqual({ open: 'red' })
+  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain('released blue of ended ended')
+})
+
+test('logs the earlier sessions it offered', async ($, on) => {
+  const { files, becomeSession } = world(on, 'karten-export blue')
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  files.delete(`${DIR}/sessions/0.json`)
+  for (const [path, text] of liveSessions(['later'])) files.set(path, text)
+  becomeSession('later')
+  await submit($, clock, undefined, 'later')
+
+  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain('earlier [karten-export (blue)]')
 })

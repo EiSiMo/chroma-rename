@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- The log lists the earlier sessions offered to the model with each request.
+
 ### Changed
+
+- Each session start removes ended sessions from the color files, so they show only colors that are held.
 
 ### Fixed
 
