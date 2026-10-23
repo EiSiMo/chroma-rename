@@ -11,6 +11,8 @@ import {
   COLORS,
   availableColors,
   claimsOf,
+  idleSinceOf,
+  type SessionFile,
   withHolder,
   type Holders,
   isDue,
@@ -101,11 +103,7 @@ const liveSessions = async (
       .map(async (f) => {
         try {
           const text = await $.fs.read(`${dir}/sessions/${f.name}`)
-          return JSON.parse(text) as {
-            sessionId?: unknown
-            status?: unknown
-            statusUpdatedAt?: unknown
-          }
+          return JSON.parse(text) as SessionFile & { sessionId?: unknown }
         } catch {
           return undefined
         }
@@ -115,14 +113,7 @@ const liveSessions = async (
     sessions.flatMap((s) =>
       typeof s?.sessionId !== 'string'
         ? []
-        : [
-            [
-              s.sessionId,
-              s.status === 'idle' && typeof s.statusUpdatedAt === 'number'
-                ? { idleSince: s.statusUpdatedAt }
-                : {},
-            ] as const,
-          ],
+        : [[s.sessionId, { idleSince: idleSinceOf(s) }] as const],
     ),
   )
 }
