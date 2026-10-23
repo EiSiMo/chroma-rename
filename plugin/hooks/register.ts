@@ -233,6 +233,36 @@ const claim = async (
   }
 }
 
+/**
+ * Rewrites each color file that still names sessions no longer running,
+ * without them, so the files show what is held. Skipped when the running
+ * sessions cannot be read.
+ */
+const prune = async ($: EngineInterface, sessionId: string): Promise<void> => {
+  try {
+    const dir = await readConfigDir($)
+    const { holders, live } = await readBoard($, dir)
+    if (live === undefined) return
+    await Promise.all(
+      COLORS.map(async (color) => {
+        const ended = Object.keys(holders[color]).filter((id) => !live.has(id))
+        if (ended.length === 0) return
+        const kept = Object.fromEntries(
+          Object.entries(holders[color]).filter(([id]) => live.has(id)),
+        )
+        await $.fs.write(holdersPath(dir, color), `${JSON.stringify(kept, null, 2)}\n`)
+        log(
+          $,
+          sessionId,
+          `released ${color} of ended ${ended.map((id) => id.slice(0, 8)).join(', ')}`,
+        )
+      }),
+    )
+  } catch (error) {
+    log($, sessionId, `cleanup failed: ${String(error)}`)
+  }
+}
+
 type Consulted = { readonly record: SessionRecord; readonly newColor?: Color }
 
 /**
@@ -282,7 +312,7 @@ const consult = async (
   log(
     $,
     sessionId,
-    `ask ${model} at turn ${turns} in ${Date.now() - startedAt} ms, ${recent.length} earlier, free ${free.join(',')}: ${answer}`,
+    `ask ${model} at turn ${turns} in ${Date.now() - startedAt} ms, free ${free.join(',')}, earlier [${recent.map((r) => (r.color === undefined ? r.name : `${r.name} (${r.color})`)).join(', ')}]: ${answer}`,
   )
   const latest = await readRecord($, sessionId)
   if (isModelNotFound(reply)) {
@@ -460,6 +490,7 @@ export const register: Register = (on, options) => {
    * `/clear` and a fork of a session the plugin named start over; a fork
    * inherits the name and color, which would make two sessions look alike.
    * A resumed session claims its color again, since its claim lapsed when it ended.
+   * Every start clears the claims of sessions that have ended.
    */
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
@@ -487,6 +518,7 @@ export const register: Register = (on, options) => {
       const { color } = await readRecord($, e.session_id)
       if (color !== undefined) await claim($, e.session_id, () => color)
     }
+    await prune($, e.session_id)
     return result
   }).catch(($, e, next) => next(e))
 }
