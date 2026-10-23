@@ -27,6 +27,14 @@ Styles: `kebab-case`, `snake_case`, `camelCase`, `PascalCase`, `Title Case`, `Se
 
 Name a session with `/rename` and tintname leaves its name alone. Set a color with `/color` and tintname keeps it. `/clear` starts over with a fresh name and color.
 
+## Same topic, same look
+
+When a new session obviously continues one of your last ten, tintname gives it that session's name, and its color while no open session holds it.
+
+## Log
+
+tintname writes what it asked the model and what it decided to `~/.claude/tintname/tintname.log`, kept under 256 KB.
+
 ## Licence
 
 [MIT](LICENSE)

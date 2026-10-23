@@ -105,6 +105,38 @@ export const userPrompts = (messages: readonly Message[]): string[] =>
 const lastReply = (messages: readonly Message[]): string =>
   [...messages].reverse().find((m) => m.role === 'assistant' && m.text.trim() !== '')?.text ?? ''
 
+/** An earlier session the plugin named, offered to the model for reuse. */
+export type Recent = { readonly name: string; readonly color?: Color }
+
+export const MAX_RECENT = 10
+
+/**
+ * The newest `MAX_RECENT` sessions the plugin named, newest first, one per
+ * name: not `sessionId` itself, nor one `isLive` reports open now, nor one
+ * named `exclude`, which a fork inherited from its parent.
+ */
+export const recentOf = (
+  records: readonly (readonly [string, SessionRecord])[],
+  sessionId: string,
+  isLive: (id: string) => boolean,
+  exclude?: string,
+): Recent[] => {
+  const named = [...records]
+    .reverse()
+    .flatMap(([id, r]) =>
+      id === sessionId ||
+      r.isUserNamed ||
+      r.applied === undefined ||
+      r.applied === exclude ||
+      isLive(id)
+        ? []
+        : [r.color === undefined ? { name: r.applied } : { name: r.applied, color: r.color }],
+    )
+  return named
+    .filter((r, i) => named.findIndex((n) => n.name === r.name) === i)
+    .slice(0, MAX_RECENT)
+}
+
 export type Current = {
   readonly name?: string
   readonly color?: Color
@@ -154,6 +186,7 @@ export const buildTitlePrompt = (
   current: Current,
   free: readonly Color[],
   style: Style = DEFAULT_STYLE,
+  recent: readonly Recent[] = [],
 ): string | null => {
   const [first, ...rest] = userPrompts(messages)
   if (first === undefined) return null
@@ -175,12 +208,22 @@ export const buildTitlePrompt = (
     '- Name what the person is doing in this session, judged from their prompts. Claude\'s reply is context only: asking which tests fail is "failing-tests", not the module the answer happens to discuss.',
     '- Name the main piece of work, not the latest prompt. Side questions and follow-ups do not change the topic.',
     '- Leave out the project or repository name unless it is the subject.',
+    ...(recent.length === 0
+      ? []
+      : [
+          '- If this session obviously continues the work of an earlier session below, reuse that name exactly. Otherwise ignore the list.',
+        ]),
     ...(needsColor
       ? [
           '',
           'Color rules:',
           `- Pick one of: ${choices.join(', ')}.`,
           '- Pick the color that fits the name best: rust or fire is orange, a globe, sky or water is blue, plants or growth is green, errors or deletion is red, docs or writing is yellow.',
+          ...(recent.length === 0
+            ? []
+            : [
+                '- When you reuse an earlier name, reuse its color too if it is in the list above.',
+              ]),
         ]
       : [
           '',
@@ -189,6 +232,13 @@ export const buildTitlePrompt = (
         ]),
     '',
     `Current name: ${current.name ?? '(none)'}`,
+    ...(recent.length === 0
+      ? []
+      : [
+          '',
+          'Earlier sessions, newest first:',
+          ...recent.map((r) => `- ${r.name}${r.color === undefined ? '' : ` (${r.color})`}`),
+        ]),
     '',
     'First prompt:',
     clip(first, FIRST_PROMPT_CHARS),
@@ -497,3 +547,14 @@ export const onUserColor = (record: SessionRecord, color: Color | undefined): Se
   pendingColor: undefined,
   color,
 })
+
+/**
+ * The log with `line` added; past `max` characters the oldest lines go, down
+ * to three quarters of `max`, so the file is not cut on every write.
+ */
+export const appendLog = (log: string, line: string, max: number): string => {
+  const text = `${log}${line}\n`
+  if (text.length <= max) return text
+  const cut = text.indexOf('\n', text.length - Math.floor((max * 3) / 4))
+  return cut === -1 ? text.slice(-max) : text.slice(cut + 1)
+}

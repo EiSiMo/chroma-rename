@@ -546,3 +546,51 @@ test('shares the color of a session that crashed while busy', async ($, on) => {
 
   expect(commands).toContain('/color pink')
 })
+
+test('reuses the name and color of an earlier session on the same topic', async ($, on) => {
+  let reply = 'karten-export blue'
+  const { asked, commands, files, becomeSession } = world(on, () => reply)
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  files.delete(`${DIR}/sessions/0.json`)
+  seedClaims(files, {})
+  for (const [path, text] of liveSessions(['later'])) files.set(path, text)
+  becomeSession('later')
+
+  reply = 'karten-export blue'
+  const result = await submit($, clock, undefined, 'later')
+  await completeTurn($, clock)
+
+  expect(asked[1]).toContain('Earlier sessions, newest first:\n- karten-export (blue)')
+  expect(result.sessionTitle).toBe('karten-export')
+  expect(commands).toEqual(['/color blue', '/color blue'])
+})
+
+test('does not offer a session that is still open', async ($, on) => {
+  const { asked, files, becomeSession } = world(on, 'karten-export blue')
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  for (const [path, text] of liveSessions([SESSION_ID, 'later'])) files.set(path, text)
+  becomeSession('later')
+  await submit($, clock, undefined, 'later')
+
+  expect(asked[1]).not.toContain('Earlier sessions')
+})
+
+test('logs what it asked and decided to its own file', async ($, on) => {
+  const { files } = world(on, 'login-redirect-fix red')
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+
+  const log = files.get(`${DIR}/tintname/tintname.log`) ?? ''
+  expect(log).toContain('ask haiku at turn 1')
+  expect(log).toContain('"login-redirect-fix red"')
+  expect(log).toContain('name login-redirect-fix, color red')
+  expect(log).toContain('applied name login-redirect-fix')
+})

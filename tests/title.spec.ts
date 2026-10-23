@@ -28,6 +28,10 @@ import {
   parseReply,
   pickColor,
   freeColors,
+  recentOf,
+  MAX_RECENT,
+  appendLog,
+  type SessionRecord,
   sanitizeName,
   userPrompts,
   type Message,
@@ -497,5 +501,79 @@ describe('idleSinceOf', () => {
 
   it('knows nothing without times', () => {
     expect(idleSinceOf({ status: 'busy' })).toBeUndefined()
+  })
+})
+
+describe('recentOf', () => {
+  const noneLive = () => false
+
+  it('lists named sessions newest first, without this one, user-named or open ones', () => {
+    const records: [string, SessionRecord][] = [
+      ['a', { applied: 'karten-export', color: 'blue' }],
+      ['b', { applied: 'eigener-name', isUserNamed: true }],
+      ['c', { applied: 'login-fix', color: 'red' }],
+      ['open', { applied: 'parser', color: 'green' }],
+      ['me', { applied: 'mine', color: 'pink' }],
+      ['d', { color: 'cyan' }],
+    ]
+    expect(recentOf(records, 'me', (id) => id === 'open')).toEqual([
+      { name: 'login-fix', color: 'red' },
+      { name: 'karten-export', color: 'blue' },
+    ])
+  })
+
+  it('keeps the newest of one name and drops the excluded one', () => {
+    const records: [string, SessionRecord][] = [
+      ['a', { applied: 'login-fix', color: 'blue' }],
+      ['b', { applied: 'login-fix', color: 'red' }],
+      ['c', { applied: 'parent-name' }],
+    ]
+    expect(recentOf(records, 'me', noneLive, 'parent-name')).toEqual([
+      { name: 'login-fix', color: 'red' },
+    ])
+  })
+
+  it(`keeps at most ${MAX_RECENT}`, () => {
+    const records = Array.from({ length: 15 }, (_, i): [string, SessionRecord] => [
+      `s${i}`,
+      { applied: `name-${i}` },
+    ])
+    const recent = recentOf(records, 'me', noneLive)
+    expect(recent.length).toBe(MAX_RECENT)
+    expect(recent[0]).toEqual({ name: 'name-14' })
+  })
+})
+
+describe('buildTitlePrompt with earlier sessions', () => {
+  const messages = [{ role: 'user', text: 'Der Kartenexport bricht wieder ab' }] as const
+
+  it('lists them and asks to reuse an obvious match', () => {
+    const prompt = buildTitlePrompt(messages, {}, ['blue', 'red'], 'kebab-case', [
+      { name: 'karten-export', color: 'blue' },
+      { name: 'login-fix' },
+    ])
+    expect(prompt).toContain('Earlier sessions, newest first:\n- karten-export (blue)\n- login-fix')
+    expect(prompt).toContain('reuse that name exactly')
+    expect(prompt).toContain('reuse its color too')
+  })
+
+  it('says nothing about them when there are none', () => {
+    const prompt = buildTitlePrompt(messages, {}, ['blue'])
+    expect(prompt).not.toContain('Earlier sessions')
+    expect(prompt).not.toContain('reuse')
+  })
+})
+
+describe('appendLog', () => {
+  it('adds the line', () => {
+    expect(appendLog('a\n', 'b', 100)).toBe('a\nb\n')
+  })
+
+  it('drops the oldest whole lines past the limit', () => {
+    const log = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n') + '\n'
+    const trimmed = appendLog(log, 'line 10', 40)
+    expect(trimmed.length).toBeLessThanOrEqual(30)
+    expect(trimmed.endsWith('line 10\n')).toBe(true)
+    expect(trimmed.startsWith('line ')).toBe(true)
   })
 })
