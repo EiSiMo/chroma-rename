@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.3.1] - 2026-10-23
+
+### Added
+
 - The log lists the earlier sessions offered to the model with each request.
 
 ### Changed
