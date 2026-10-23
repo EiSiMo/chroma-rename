@@ -1,6 +1,6 @@
-# Contributing to tintname
+# Contributing to chroma-rename
 
-Bug reports, ideas and pull requests are welcome. The issue tracker is at [github.com/EiSiMo/tintname/issues](https://github.com/EiSiMo/tintname/issues).
+Bug reports, ideas and pull requests are welcome. The issue tracker is at [github.com/EiSiMo/chroma-rename/issues](https://github.com/EiSiMo/chroma-rename/issues).
 
 ## Reporting bugs
 

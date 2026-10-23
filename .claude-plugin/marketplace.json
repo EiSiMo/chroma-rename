@@ -1,13 +1,13 @@
 {
-  "name": "tintname",
+  "name": "chroma-rename",
   "owner": {
     "name": "Moritz",
     "url": "https://github.com/EiSiMo"
   },
-  "description": "tintname for Claude Code.",
+  "description": "chroma-rename for Claude Code.",
   "plugins": [
     {
-      "name": "tintname",
+      "name": "chroma-rename",
       "source": "./plugin",
       "description": "Names Claude Code sessions in short kebab-case, in the chat's language, and gives each open session its own prompt bar color."
     }

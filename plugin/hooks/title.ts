@@ -1,5 +1,5 @@
 /**
- * Pure core of tintname: what to ask the model, what to accept back, when to
+ * Pure core of chroma-rename: what to ask the model, what to accept back, when to
  * ask, which color is free, and how a session's record moves. No `claude-code`
  * imports, so Vitest runs it without the engine.
  */
@@ -19,7 +19,7 @@ export const COLORS = [
 ] as const
 export type Color = (typeof COLORS)[number]
 
-/** What tintname remembers about one session, kept in `$.store`. */
+/** What chroma-rename remembers about one session, kept in `$.store`. */
 export type SessionRecord = {
   /** The name this plugin last handed to Claude Code. */
   readonly applied?: string
@@ -327,7 +327,7 @@ export const freeColors = (taken: readonly Color[]): Color[] =>
 
 export const IDLE_SHARE_MS = 2 * 60 * 60 * 1000
 
-/** What tintname reads from a session's process file in Claude Code's `sessions` folder. */
+/** What chroma-rename reads from a session's process file in Claude Code's `sessions` folder. */
 export type SessionFile = {
   readonly status?: unknown
   readonly statusUpdatedAt?: unknown
@@ -512,7 +512,7 @@ export const onModelMissing = (
   ...(record.isModelWarned
     ? {}
     : {
-        warning: `tintname: model "${model}" not found; check its Configure options in /plugin`,
+        warning: `chroma-rename: model "${model}" not found; check its Configure options in /plugin`,
       }),
 })
 

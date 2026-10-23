@@ -373,7 +373,7 @@ describe('onModelMissing', () => {
   it('warns with the model name and where to change it', () => {
     const { warning } = onModelMissing({}, 1, 'haikoo')
     expect(warning).toBe(
-      'tintname: model "haikoo" not found; check its Configure options in /plugin',
+      'chroma-rename: model "haikoo" not found; check its Configure options in /plugin',
     )
   })
 

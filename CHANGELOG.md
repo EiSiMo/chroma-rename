@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Renamed from tintname to chroma-rename. The log and color files now sit in `chroma-rename/` under the config directory.
+
 ### Fixed
 
 ### Removed
@@ -19,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- The README, now also shipped in the plugin folder, lists the files tintname writes, the one command it runs and what each hook changes.
+- The README, now also shipped in the plugin folder, lists the files chroma-rename writes, the one command it runs and what each hook changes.
 
 ### Changed
 
@@ -60,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 
 - A new session that obviously continues one of the last ten sessions gets its name and color again.
-- A log of what tintname asked and decided, in `tintname/tintname.log` under the config directory, kept under 256 KB.
+- A log of what chroma-rename asked and decided, in `chroma-rename/chroma-rename.log` under the config directory, kept under 256 KB.
 
 ### Changed
 
@@ -108,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The README covers only install, settings and how to keep your own name or color.
-- Forked from session-titler and renamed to tintname.
+- Forked from session-titler and renamed to chroma-rename.
 - Names are 1 to 3 words of lowercase kebab-case, in the chat's language, umlauts kept.
 - Renames only on a clear topic switch; the model answers `KEEP` otherwise.
 - Names follow what the person asks, not topics Claude's reply mentions.

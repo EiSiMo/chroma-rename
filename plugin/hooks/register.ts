@@ -90,7 +90,7 @@ const readConfigDir = async ($: EngineInterface): Promise<string> => {
   return configDir
 }
 
-const LOG_FILE = 'tintname/tintname.log'
+const LOG_FILE = 'chroma-rename/chroma-rename.log'
 const MAX_LOG_CHARS = 256 * 1024
 let logged: Promise<void> = Promise.resolve()
 
@@ -145,7 +145,7 @@ const liveSessions = async (
   )
 }
 
-const holdersPath = (dir: string, color: Color): string => `${dir}/tintname/colors/${color}.json`
+const holdersPath = (dir: string, color: Color): string => `${dir}/chroma-rename/colors/${color}.json`
 
 /** One color's holders; a file caught mid-write is read again, a missing one holds nobody. */
 const readHolders = async ($: EngineInterface, dir: string, color: Color): Promise<Holders> => {

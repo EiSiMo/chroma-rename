@@ -1,5 +1,5 @@
 {
-  "name": "tintname",
+  "name": "chroma-rename",
   "version": "0.3.3",
   "private": true,
   "description": "Names Claude Code sessions in short kebab-case and gives each open session its own color.",

@@ -14,8 +14,8 @@ const PLUGIN = ((): string => {
   const marketplace = readJson('.claude-plugin/marketplace.json') as {
     plugins: { name: string; source: string }[]
   }
-  const entry = marketplace.plugins.find((p) => p.name === 'tintname')
-  if (entry === undefined) throw new Error('No tintname entry in the marketplace')
+  const entry = marketplace.plugins.find((p) => p.name === 'chroma-rename')
+  if (entry === undefined) throw new Error('No chroma-rename entry in the marketplace')
   return entry.source
 })()
 
@@ -24,7 +24,7 @@ const ICON = join(PLUGIN, '.claude-plugin/icon.png')
 
 describe('plugin folder', () => {
   it('holds the manifest the marketplace entry names', () => {
-    expect(readJson(MANIFEST).name).toBe('tintname')
+    expect(readJson(MANIFEST).name).toBe('chroma-rename')
   })
 
   it('ships only the manifest, icon, README, hooks and engine tests', () => {

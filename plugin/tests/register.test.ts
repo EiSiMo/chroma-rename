@@ -28,7 +28,7 @@ const DIR = '/home/test/.claude'
 const COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'] as const
 const UNIX = { HOME: '/home/test' }
 
-const colorFile = (color: string, dir = DIR): string => `${dir}/tintname/colors/${color}.json`
+const colorFile = (color: string, dir = DIR): string => `${dir}/chroma-rename/colors/${color}.json`
 
 /** Which session holds which color, read from the per-color files. */
 const claimsIn = (files: Map<string, string>, dir = DIR): Record<string, string> =>
@@ -493,7 +493,7 @@ test('finds the configuration on Windows without running a command', async ($, o
   expect(runs).toEqual([])
   expect(commands).toContain('/color red')
   expect(
-    [...files.keys()].some((p) => p.endsWith('C:\\Users\\test/.claude/tintname/colors/red.json')),
+    [...files.keys()].some((p) => p.endsWith('C:\\Users\\test/.claude/chroma-rename/colors/red.json')),
   ).toBe(true)
 })
 
@@ -588,7 +588,7 @@ test('logs what it asked and decided to its own file', async ($, on) => {
   await submit($, clock)
   await completeTurn($, clock)
 
-  const log = files.get(`${DIR}/tintname/tintname.log`) ?? ''
+  const log = files.get(`${DIR}/chroma-rename/chroma-rename.log`) ?? ''
   expect(log).toContain('ask haiku at turn 1')
   expect(log).toContain('earlier []')
   expect(log).toContain('"login-redirect-fix red"')
@@ -606,7 +606,7 @@ test('clears the claims of ended sessions when a session starts', async ($, on) 
   await drive(clock, $.classic.SessionStart({ session_id: SESSION_ID, source: 'startup' }))
 
   expect(claimsIn(files)).toEqual({ open: 'red' })
-  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain('released blue of ended ended')
+  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain('released blue of ended ended')
 })
 
 test('logs the earlier sessions it offered', async ($, on) => {
@@ -620,7 +620,7 @@ test('logs the earlier sessions it offered', async ($, on) => {
   becomeSession('later')
   await submit($, clock, undefined, 'later')
 
-  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain('earlier [karten-export (blue)]')
+  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain('earlier [karten-export (blue)]')
 })
 
 test('lets its color go when the session ends', async ($, on) => {
@@ -642,7 +642,7 @@ test('lets its color go when the session ends', async ($, on) => {
   )
 
   expect(claimsIn(files)).toEqual({})
-  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain(
+  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain(
     'ended (prompt_input_exit), color released',
   )
 })
