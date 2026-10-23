@@ -277,7 +277,26 @@ export const freeColors = (taken: readonly Color[]): Color[] =>
 
 export const IDLE_SHARE_MS = 2 * 60 * 60 * 1000
 
-/** Another live session's color, with when it went idle if it is idle now. */
+/** What tintname reads from a session's process file in Claude Code's `sessions` folder. */
+export type SessionFile = {
+  readonly status?: unknown
+  readonly statusUpdatedAt?: unknown
+  readonly updatedAt?: unknown
+}
+
+/**
+ * Since when a session counts as idle: when it went idle, or, for any other
+ * status, when its file was last updated. A session that crashed leaves its
+ * file behind unchanged, so its color can be shared like an idle one's.
+ */
+export const idleSinceOf = (file: SessionFile): number | undefined => {
+  if (file.status === 'idle' && typeof file.statusUpdatedAt === 'number') {
+    return file.statusUpdatedAt
+  }
+  return typeof file.updatedAt === 'number' ? file.updatedAt : undefined
+}
+
+/** Another live session's color, with since when it counts as idle. */
 export type Claim = { readonly color: Color; readonly idleSince?: number }
 
 /**

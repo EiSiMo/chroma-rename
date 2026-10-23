@@ -4,6 +4,7 @@ import {
   MAX_FREE_LENGTH,
   MAX_HOLDERS,
   claimsOf,
+  idleSinceOf,
   withHolder,
   MAX_NAME_LENGTH,
   STYLES,
@@ -482,5 +483,19 @@ describe('claimsOf', () => {
       { color: 'red' },
       { color: 'blue', idleSince: 7 },
     ])
+  })
+})
+
+describe('idleSinceOf', () => {
+  it('reads when an idle session went idle', () => {
+    expect(idleSinceOf({ status: 'idle', statusUpdatedAt: 5, updatedAt: 9 })).toBe(5)
+  })
+
+  it('reads when a busy session last updated its file, so a crashed one ages', () => {
+    expect(idleSinceOf({ status: 'busy', statusUpdatedAt: 5, updatedAt: 9 })).toBe(9)
+  })
+
+  it('knows nothing without times', () => {
+    expect(idleSinceOf({ status: 'busy' })).toBeUndefined()
   })
 })

@@ -523,3 +523,26 @@ test('still names and colors when the color files cannot be written', async ($, 
   expect(result.sessionTitle).toBe('login-redirect-fix')
   expect(commands).toEqual(['/color red'])
 })
+
+test('shares the color of a session that crashed while busy', async ($, on) => {
+  const { commands, files } = world(on, 'login-redirect-fix blue')
+  const clock = mock.clock(on)
+  const now = Date.now()
+  const others = COLORS.map((color) => `holder-${color}`)
+  others.forEach((id, i) => {
+    const isCrashed = COLORS[i] === 'pink'
+    files.set(
+      `${DIR}/sessions/other-${i}.json`,
+      JSON.stringify({
+        sessionId: id,
+        status: 'busy',
+        updatedAt: isCrashed ? now - 3 * 60 * 60 * 1000 : now,
+      }),
+    )
+  })
+  seedClaims(files, Object.fromEntries(others.map((id, i) => [id, COLORS[i] ?? 'red'])))
+
+  await completeTurn($, clock)
+
+  expect(commands).toContain('/color pink')
+})
