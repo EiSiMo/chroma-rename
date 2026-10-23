@@ -43,9 +43,29 @@ Name a session with `/rename` and tintname leaves its name alone. Set a color wi
 
 When a new session obviously continues one of your last ten, tintname gives it that session's name, and its color while no open session holds it.
 
-## Log
+## What tintname writes, runs and hooks
 
-tintname writes what it asked the model and what it decided to `~/.claude/tintname/tintname.log`, kept under 256 KB.
+### Files it writes
+
+- `~/.claude/tintname/tintname.log`: what tintname asked the model and what it decided, kept under 256 KB by dropping the oldest lines.
+- `~/.claude/tintname/colors/<color>.json`: one file per color, listing the open sessions that hold it, so two sessions never share a color.
+- Each session's name and color, in the plugin store Claude Code keeps for tintname under `~/.claude`.
+
+With `CLAUDE_CONFIG_DIR` set, these sit under that directory instead of `~/.claude`. tintname writes no build, settings or instruction files, and nothing in your project.
+
+### Commands it runs
+
+Only `/color <color>`, after a turn ends, to set the prompt bar color. It runs no shell commands and no other slash commands. Names are set through the prompt hook's session title, not `/rename`.
+
+### Hooks and what they change
+
+- `classic.UserPromptSubmit`: reads the first prompt to pick a name and applies a waiting name as the session title. The prompt itself is never changed or blocked.
+- `turn.complete`: after a turn, asks the model whether the name still fits and runs a waiting `/color`.
+- `session.append` (door `command`): empties only the rows of `/color` runs tintname made itself. Your own `/color` runs stay as they are, and their color is kept as yours.
+- `classic.SessionStart`: starts over on `/clear` and forks, takes the color back on resume, and clears the color claims of sessions that no longer run.
+- `session.end`: releases the session's color.
+
+Every hook passes its event on unchanged when it fails. tintname never changes permission decisions, permission mode, settings or Remote Control.
 
 ## Licence
 

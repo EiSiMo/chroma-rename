@@ -90,11 +90,12 @@ const readConfigDir = async ($: EngineInterface): Promise<string> => {
   return configDir
 }
 
+const LOG_FILE = 'tintname/tintname.log'
 const MAX_LOG_CHARS = 256 * 1024
 let logged: Promise<void> = Promise.resolve()
 
 /**
- * Adds a line to `tintname/tintname.log` under the config directory, the
+ * Adds a line to `LOG_FILE` under the config directory, the
  * oldest lines dropped past `MAX_LOG_CHARS`. Lines of one session are written
  * in turn; a failed write is lost, never raised.
  */
@@ -102,7 +103,7 @@ const log = ($: EngineInterface, sessionId: string, text: string): void => {
   const line = `${new Date().toISOString()} ${sessionId.slice(0, 8)} ${text}`
   logged = logged.then(async () => {
     try {
-      const path = `${await readConfigDir($)}/tintname/tintname.log`
+      const path = `${await readConfigDir($)}/${LOG_FILE}`
       const old = await $.fs.read(path).catch(() => '')
       await $.fs.write(path, appendLog(old, line, MAX_LOG_CHARS))
     } catch {
