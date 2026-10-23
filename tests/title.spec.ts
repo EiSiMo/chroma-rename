@@ -3,7 +3,11 @@ import {
   COLORS,
   MAX_NAME_LENGTH,
   buildTitlePrompt,
-  colorRunIn,
+  colorRowIn,
+  availableColors,
+  onUserColor,
+  IDLE_SHARE_MS,
+  type Claim,
   cleanPrompt,
   isDue,
   isModelNotFound,
@@ -84,6 +88,12 @@ describe('buildTitlePrompt', () => {
   it('offers only the free colors', () => {
     const prompt = buildTitlePrompt([user('hi there')], {}, ['blue', 'pink']) ?? ''
     expect(prompt).toContain('Pick one of: blue, pink.')
+  })
+
+  it('asks for no color when the person set their own', () => {
+    const prompt = buildTitlePrompt([user('hi there')], { isColorFixed: true }, COLORS) ?? ''
+    expect(prompt).not.toContain('Color rules')
+    expect(prompt).toContain('or "KEEP"')
   })
 
   it('offers every color when none is free', () => {
@@ -286,22 +296,71 @@ describe('onModelMissing', () => {
   })
 })
 
-describe('colorRunIn', () => {
-  it('reads the color of a /color echo and output row', () => {
+describe('colorRowIn', () => {
+  it('reads the arguments of a /color echo row', () => {
     expect(
-      colorRunIn(
-        '<command-name>/color</command-name>\n  <command-message>color</command-message>\n  <command-args>yellow</command-args>',
+      colorRowIn(
+        '<command-name>/color</command-name>\n  <command-message>color</command-message>\n  <command-args>Yellow</command-args>',
       ),
-    ).toBe('yellow')
+    ).toEqual({ kind: 'echo', value: 'yellow' })
+  })
+
+  it('reads a bare /color echo row as no arguments', () => {
     expect(
-      colorRunIn('<local-command-stdout>Session color set to: yellow</local-command-stdout>'),
-    ).toBe('yellow')
+      colorRowIn('<command-name>/color</command-name>\n  <command-message>color</command-message>'),
+    ).toEqual({ kind: 'echo', value: '' })
+  })
+
+  it('reads the color of a /color output row', () => {
+    expect(
+      colorRowIn('<local-command-stdout>Session color set to: cyan</local-command-stdout>'),
+    ).toEqual({ kind: 'output', value: 'cyan' })
   })
 
   it('ignores other rows', () => {
-    expect(colorRunIn('<command-name>/rename</command-name><command-args>x</command-args>')).toBe(
+    expect(colorRowIn('<command-name>/rename</command-name><command-args>x</command-args>')).toBe(
       undefined,
     )
-    expect(colorRunIn('hello')).toBe(undefined)
+    expect(colorRowIn('hello')).toBe(undefined)
+  })
+})
+
+describe('availableColors', () => {
+  const NOW = 10 * IDLE_SHARE_MS
+
+  it('offers the free colors while there are any', () => {
+    expect(availableColors([{ color: 'red' }], NOW)).toEqual(COLORS.filter((c) => c !== 'red'))
+  })
+
+  it('with every color held, offers those of long-idle sessions, longest idle first', () => {
+    const claims: Claim[] = COLORS.map((color) => ({ color }))
+    claims[2] = { color: COLORS[2], idleSince: NOW - 3 * IDLE_SHARE_MS }
+    claims[5] = { color: COLORS[5], idleSince: NOW - 5 * IDLE_SHARE_MS }
+    claims[6] = { color: COLORS[6], idleSince: NOW - IDLE_SHARE_MS / 2 }
+    expect(availableColors(claims, NOW)).toEqual([COLORS[5], COLORS[2]])
+  })
+
+  it('offers nothing when every holder is busy or only briefly idle', () => {
+    expect(
+      availableColors(
+        COLORS.map((color) => ({ color, idleSince: NOW - 1 })),
+        NOW,
+      ),
+    ).toEqual([])
+  })
+})
+
+describe('onUserColor', () => {
+  it("takes the person's color and drops the plugin's pending one", () => {
+    expect(onUserColor({ color: 'red', pendingColor: 'blue', applied: 'x' }, 'pink')).toEqual({
+      applied: 'x',
+      color: 'pink',
+      isColorUserSet: true,
+      pendingColor: undefined,
+    })
+  })
+
+  it('clears the color on default', () => {
+    expect(onUserColor({ color: 'red' }, undefined).color).toBeUndefined()
   })
 })

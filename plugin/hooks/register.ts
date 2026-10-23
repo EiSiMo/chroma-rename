@@ -2,8 +2,11 @@ import type { EngineInterface, Register } from 'claude-code'
 import {
   SYSTEM_PROMPT,
   buildTitlePrompt,
-  colorRunIn,
-  freeColors,
+  colorRowIn,
+  isColor,
+  onUserColor,
+  availableColors,
+  type Claim,
   isDue,
   isModelNotFound,
   onChecked,
@@ -58,53 +61,126 @@ const readConfigDir = async ($: EngineInterface): Promise<string> => {
   return configDir
 }
 
-/** The ids of the sessions running now, from the files Claude Code keeps per process. */
-const liveSessionIds = async ($: EngineInterface, dir: string): Promise<Set<string>> => {
+type LiveSession = { readonly idleSince?: number }
+
+/** The sessions running now, by id, from the files Claude Code keeps per process. */
+const liveSessions = async ($: EngineInterface, dir: string): Promise<Map<string, LiveSession>> => {
   const entries = await $.fs.list(`${dir}/sessions`).catch(() => [])
-  const ids = await Promise.all(
+  const sessions = await Promise.all(
     entries
       .filter((f) => f.kind === 'file' && f.name.endsWith('.json'))
       .map(async (f) => {
         try {
           const text = await $.fs.read(`${dir}/sessions/${f.name}`)
-          return (JSON.parse(text) as { sessionId?: unknown }).sessionId
+          return JSON.parse(text) as {
+            sessionId?: unknown
+            status?: unknown
+            statusUpdatedAt?: unknown
+          }
         } catch {
           return undefined
         }
       }),
   )
-  return new Set(ids.filter((id): id is string => typeof id === 'string'))
+  return new Map(
+    sessions.flatMap((s) =>
+      typeof s?.sessionId !== 'string'
+        ? []
+        : [
+            [
+              s.sessionId,
+              s.status === 'idle' && typeof s.statusUpdatedAt === 'number'
+                ? { idleSince: s.statusUpdatedAt }
+                : {},
+            ] as const,
+          ],
+    ),
+  )
 }
 
 const claimsPath = (dir: string): string => `${dir}/tintname/colors.json`
+const lockPath = (dir: string): string => `${dir}/tintname/colors.lock`
 
-/** The claims of live sessions only; a session that ended or was cleared frees its color. */
-const readClaims = async ($: EngineInterface, dir: string): Promise<Claims> => {
-  const live = await liveSessionIds($, dir)
+const LOCK_WAIT_MS = 3_000
+const LOCK_STALE_MS = 10_000
+
+const sleep = ($: EngineInterface, ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    $.clock.after(ms, resolve)
+  })
+
+/**
+ * Runs `fn` holding the claims lock, a directory only one `mkdir` can create.
+ * A lock older than `LOCK_STALE_MS` was left by a crash and is broken; after
+ * `LOCK_WAIT_MS` `fn` runs anyway, a rare doubled color being better than none.
+ */
+const withLock = async <T>($: EngineInterface, fn: () => Promise<T>): Promise<T> => {
+  const dir = await readConfigDir($)
+  const lock = lockPath(dir)
+  await $.process.run(['mkdir', '-p', `${dir}/tintname`])
+  let isHeld = false
+  for (let waited = 0; waited < LOCK_WAIT_MS && !isHeld; waited += 50) {
+    isHeld = (await $.process.run(['mkdir', lock])).exitCode === 0
+    if (isHeld) break
+    const age = await $.fs
+      .stat(lock)
+      .then((st) => Date.now() - st.mtimeMs)
+      .catch(() => 0)
+    if (age > LOCK_STALE_MS) await $.process.run(['rmdir', lock])
+    else await sleep($, 50)
+  }
   try {
-    const all = JSON.parse(await $.fs.read(claimsPath(dir))) as Claims
-    return Object.fromEntries(Object.entries(all).filter(([id]) => live.has(id)))
-  } catch {
-    return {}
+    return await fn()
+  } finally {
+    if (isHeld) await $.process.run(['rmdir', lock])
   }
 }
 
-const writeClaim = async (
+/** The claims of live sessions only; a session that ended or was cleared frees its color. */
+const readClaims = async (
   $: EngineInterface,
-  sessionId: string,
-  color: Color | undefined,
-): Promise<void> => {
-  const dir = await readConfigDir($)
-  const others = Object.entries(await readClaims($, dir)).filter(([id]) => id !== sessionId)
-  const claims = Object.fromEntries(color === undefined ? others : [...others, [sessionId, color]])
-  await $.fs.write(claimsPath(dir), `${JSON.stringify(claims, null, 2)}\n`)
+  dir: string,
+): Promise<{ readonly claims: Claims; readonly live: Map<string, LiveSession> }> => {
+  const live = await liveSessions($, dir)
+  try {
+    const all = JSON.parse(await $.fs.read(claimsPath(dir))) as Claims
+    return { claims: Object.fromEntries(Object.entries(all).filter(([id]) => live.has(id))), live }
+  } catch {
+    return { claims: {}, live }
+  }
 }
 
-const takenByOthers = async ($: EngineInterface, sessionId: string): Promise<Color[]> => {
-  const claims = await readClaims($, await readConfigDir($))
-  return Object.entries(claims)
+/** The colors this session may take now, given every other live session's claim. */
+const colorsFor = (claims: Claims, live: Map<string, LiveSession>, sessionId: string): Color[] => {
+  const others: Claim[] = Object.entries(claims)
     .filter(([id]) => id !== sessionId)
-    .map(([, color]) => color)
+    .map(([id, color]) => ({ color, ...live.get(id) }))
+  return availableColors(others, Date.now())
+}
+
+/**
+ * Claims a color for the session under the lock: `choose` gets the colors it
+ * may take and returns its pick, or `undefined` to release its claim.
+ */
+const claim = (
+  $: EngineInterface,
+  sessionId: string,
+  choose: (available: Color[]) => Color | undefined,
+): Promise<Color | undefined> =>
+  withLock($, async () => {
+    const dir = await readConfigDir($)
+    const { claims, live } = await readClaims($, dir)
+    const color = choose(colorsFor(claims, live, sessionId))
+    const others = Object.entries(claims).filter(([id]) => id !== sessionId)
+    const next = Object.fromEntries(color === undefined ? others : [...others, [sessionId, color]])
+    await $.fs.write(claimsPath(dir), `${JSON.stringify(next, null, 2)}\n`)
+    return color
+  })
+
+/** The colors this session may take now, for the prompt; read without the lock. */
+const availableFor = async ($: EngineInterface, sessionId: string): Promise<Color[]> => {
+  const { claims, live } = await readClaims($, await readConfigDir($))
+  return colorsFor(claims, live, sessionId)
 }
 
 type Consulted = { readonly record: SessionRecord; readonly newColor?: Color }
@@ -124,10 +200,11 @@ const consult = async (
   isFresh = false,
 ): Promise<Consulted | undefined> => {
   const record = await readRecord($, sessionId)
-  const free = freeColors(await takenByOthers($, sessionId))
+  const free = await availableFor($, sessionId)
+  const isColorFixed = record.isColorUserSet === true
   const current = isFresh
-    ? { color: record.color }
-    : { name: record.pending ?? record.applied, color: record.color }
+    ? { color: record.color, isColorFixed }
+    : { name: record.pending ?? record.applied, color: record.color, isColorFixed }
   const prompt = buildTitlePrompt(messages, current, free)
   if (prompt === null) return undefined
 
@@ -150,14 +227,17 @@ const consult = async (
   if (parsed?.kind !== 'name') {
     const checked = onChecked(latest, turns, null)
     await writeRecord($, sessionId, checked)
-    if (latest.color !== undefined) await writeClaim($, sessionId, latest.color)
+    if (latest.color !== undefined) await claim($, sessionId, () => latest.color)
     return { record: checked }
   }
 
-  const color = pickColor(parsed.color, latest.color, freeColors(await takenByOthers($, sessionId)))
-  await writeClaim($, sessionId, color)
-  const newColor = color !== undefined && color !== latest.color ? color : undefined
-  const named = onChecked(latest, turns, parsed.name, color)
+  const settled = await readRecord($, sessionId)
+  const color = await claim($, sessionId, (available) =>
+    settled.isColorUserSet ? settled.color : pickColor(parsed.color, settled.color, available),
+  )
+  const newColor =
+    color !== undefined && color !== settled.color && !settled.isColorUserSet ? color : undefined
+  const named = onChecked(settled, turns, parsed.name, color)
   const checked = newColor === undefined ? named : onRan(named, `color ${newColor}`)
   await writeRecord($, sessionId, checked)
   return newColor === undefined ? { record: checked } : { record: checked, newColor }
@@ -219,15 +299,34 @@ export const register: Register = (on, options) => {
   /**
    * Empties the rows of a `/color` run this plugin made, the echo and the
    * output alike: an empty row is stored as `(no content)` and drawn as nothing.
+   * A run of the person's own is kept, and its color becomes theirs: claimed
+   * for them and never changed by the plugin. `default` releases the claim.
    */
   on('session.append', { door: 'command' }, async ($, e, next) => {
     const block = e.message.content[0]
     const text = block?.type === 'text' && typeof block.text === 'string' ? block.text : ''
-    const color = colorRunIn(text)
-    if (color === undefined) return next(e)
-    const record = await readRecord($, await $.session.id())
-    if (!(record.ran ?? []).includes(`color ${color}`)) return next(e)
-    return next({ ...e, message: { ...e.message, content: [] } })
+    const row = colorRowIn(text)
+    if (row === undefined) return next(e)
+    const sessionId = await $.session.id()
+    const record = await readRecord($, sessionId)
+    const run = `color ${row.value}`
+    if ((record.ran ?? []).includes(run)) {
+      if (row.kind === 'output') {
+        await writeRecord($, sessionId, { ...record, ran: record.ran?.filter((r) => r !== run) })
+      }
+      return next({ ...e, message: { ...e.message, content: [] } })
+    }
+    const isReset = row.kind === 'echo' && (row.value === 'default' || row.value === 'reset')
+    const color = isColor(row.value) ? row.value : undefined
+    if (isReset || color !== undefined || !record.isColorUserSet) {
+      await writeRecord(
+        $,
+        sessionId,
+        onUserColor(record, isReset ? undefined : (color ?? record.color)),
+      )
+      await claim($, sessionId, () => (isReset ? undefined : (color ?? record.color)))
+    }
+    return next(e)
   })
 
   /**
@@ -263,7 +362,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (e.source !== 'clear') return result
     await writeRecord($, e.session_id, onClear(e.session_title))
-    await writeClaim($, e.session_id, undefined)
+    await claim($, e.session_id, () => undefined)
     return result
   }).catch(($, e, next) => next(e))
 }

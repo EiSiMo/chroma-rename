@@ -26,7 +26,11 @@ After that the plugin checks after prompts 2, 4, 8 and 16, then every 8 prompts.
 
 The color is picked once, with the first name, and stays until `/clear`. A plugin can only reach the prompt bar through `/color`, so the plugin runs it once the first turn ends, and a `session.append` hook empties that run's echo and output rows as they are stored, so nothing shows in the transcript.
 
-Colors are coordinated through `~/.claude/tintname/colors.json` (session id to color). A claim counts only while its session is listed in `~/.claude/sessions/`, so ended or cleared sessions free their color by themselves.
+Colors are coordinated through `~/.claude/tintname/colors.json` (session id to color), written under a lock (`colors.lock`, a directory only one `mkdir` can create; one older than 10 seconds is treated as left by a crash). A claim counts only while its session is listed in `~/.claude/sessions/`, so ended or cleared sessions free their color by themselves. With all 8 colors held, a new session shares the color of the session idle longest, if it has been idle for 2 hours or more.
+
+### Setting a color yourself
+
+Run `/color <color>` (or a bare `/color`) and that color is yours: the plugin claims it for the session so other sessions avoid it, and never changes it. `/color default` releases the claim. `/clear` hands the color back to the plugin.
 
 ### Naming a session yourself
 
@@ -40,11 +44,9 @@ If you name a session with `/rename` or `claude --name`, the plugin sees a title
 
 ## Limitations
 
-- Two sessions picking a color in the same instant can get the same one.
 - The first prompt waits for its name, typically 1 to 2 seconds; the color follows when the first turn ends.
-- The emptied `/color` rows stay in the transcript file as `(no content)`.
+- The emptied `/color` rows stay in the transcript file as `(no content)`, and the model reads those two words.
 - After `/clear` the old name stays until the next prompt.
-- A color you set by hand with `/color` is not known to other sessions.
 - It uses Claude Code's plugin hooks API, which is in early access and may change between releases.
 
 ## Development

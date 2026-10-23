@@ -33,6 +33,8 @@ export type SessionRecord = {
   readonly ran?: readonly string[]
   /** The prompt count at the last check. */
   readonly checkedAt?: number
+  /** Set once the person runs `/color` themselves; the plugin then leaves the color alone. */
+  readonly isColorUserSet?: boolean
   /** Set once the person names the session themselves; the plugin then stays out. */
   readonly isUserNamed?: boolean
   /** Set once the person has been told the configured model was not found. */
@@ -85,7 +87,12 @@ export const userPrompts = (messages: readonly Message[]): string[] =>
 const lastReply = (messages: readonly Message[]): string =>
   [...messages].reverse().find((m) => m.role === 'assistant' && m.text.trim() !== '')?.text ?? ''
 
-export type Current = { readonly name?: string; readonly color?: Color }
+export type Current = {
+  readonly name?: string
+  readonly color?: Color
+  /** The color is the person's own; no new one is asked for. */
+  readonly isColorFixed?: boolean
+}
 
 /**
  * The request for a name, and for a color while the session has none: the
@@ -106,7 +113,7 @@ export const buildTitlePrompt = (
   const reply = lastReply(messages)
   const choices = free.length > 0 ? free : COLORS
 
-  const needsColor = current.color === undefined
+  const needsColor = current.color === undefined && current.isColorFixed !== true
 
   return [
     needsColor
@@ -151,7 +158,7 @@ export const buildTitlePrompt = (
   ].join('\n')
 }
 
-const isColor = (word: string): word is Color => (COLORS as readonly string[]).includes(word)
+export const isColor = (word: string): word is Color => (COLORS as readonly string[]).includes(word)
 
 /**
  * Reduces a name to lowercase kebab-case of at most `MAX_WORDS` words, letters
@@ -196,6 +203,25 @@ export const parseReply = (raw: string): Reply | null => {
 /** The colors no other live session holds, in `COLORS` order. */
 export const freeColors = (taken: readonly Color[]): Color[] =>
   COLORS.filter((c) => !taken.includes(c))
+
+export const IDLE_SHARE_MS = 2 * 60 * 60 * 1000
+
+/** Another live session's color, with when it went idle if it is idle now. */
+export type Claim = { readonly color: Color; readonly idleSince?: number }
+
+/**
+ * The colors a session may take: the free ones, or, with every color held,
+ * those of sessions idle for `IDLE_SHARE_MS` or longer, longest idle first.
+ */
+export const availableColors = (claims: readonly Claim[], now: number): Color[] => {
+  const free = freeColors(claims.map((c) => c.color))
+  if (free.length > 0) return free
+  const idle = claims
+    .filter((c) => c.idleSince !== undefined && now - c.idleSince >= IDLE_SHARE_MS)
+    .sort((a, b) => (a.idleSince ?? 0) - (b.idleSince ?? 0))
+    .map((c) => c.color)
+  return idle.filter((c, i) => idle.indexOf(c) === i)
+}
 
 /**
  * The color to show: once set it stays, until `/clear`. A new session gets
@@ -300,9 +326,27 @@ export const onRan = (record: SessionRecord, run: string): SessionRecord => ({
 })
 
 const COLOR_ECHO =
-  /^<command-name>\/color<\/command-name>[\s\S]*<command-args>([^<]*)<\/command-args>/
+  /^<command-name>\/color<\/command-name>[\s\S]*?(?:<command-args>([^<]*)<\/command-args>|$)/
 const COLOR_OUTPUT = /^<local-command-stdout>Session color set to: ([a-z]+)<\/local-command-stdout>/
 
-/** The color a stored `/color` row names, its echo or its output, or `undefined` for any other row. */
-export const colorRunIn = (text: string): string | undefined =>
-  (COLOR_ECHO.exec(text) ?? COLOR_OUTPUT.exec(text))?.[1]
+/** A stored row of a `/color` run: the echo with its arguments, or the output with its color. */
+export type ColorRow = { readonly kind: 'echo' | 'output'; readonly value: string }
+
+/** Reads a stored row as part of a `/color` run, or `undefined` for any other row. */
+export const colorRowIn = (text: string): ColorRow | undefined => {
+  const echo = COLOR_ECHO.exec(text)
+  if (echo !== null) return { kind: 'echo', value: (echo[1] ?? '').trim().toLowerCase() }
+  const output = COLOR_OUTPUT.exec(text)
+  return output === null ? undefined : { kind: 'output', value: output[1] ?? '' }
+}
+
+/**
+ * The record after the person ran `/color` themselves: their color, or none
+ * for `default`, and the plugin's own pending color dropped.
+ */
+export const onUserColor = (record: SessionRecord, color: Color | undefined): SessionRecord => ({
+  ...record,
+  isColorUserSet: true,
+  pendingColor: undefined,
+  color,
+})

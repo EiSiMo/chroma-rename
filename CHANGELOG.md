@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A `/color` you run yourself is respected: the plugin claims that color for the session and never changes it.
+- The colors file is written under a lock, so sessions starting together never pick the same color.
+- With all 8 colors held, a new session shares the color of a session idle for 2 hours or more.
 - Each session gets a prompt bar color picked by the model to fit its subject, coordinated across open sessions so no two share one.
 - `/clear` gives the session a fresh name and color at its next prompt.
 - The first prompt is named before it is sent, silently through `sessionTitle`; later renames apply at the next prompt.
