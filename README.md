@@ -24,7 +24,7 @@ The first prompt is named before it is sent: the prompt hook asks the model (Hai
 
 After that the plugin checks after prompts 2, 4, 8 and 16, then every 8 prompts. Each check sends the current name, your first prompt, your 8 most recent prompts and Claude's latest reply. The model answers `KEEP` unless the topic clearly switched; a new name is applied silently at your next prompt.
 
-The color is picked once, with the first name, and stays until `/clear`. A plugin can only reach the prompt bar through `/color`, so each session shows one `/color <color>` line; the plugin hides that command's output row, but this Claude Code build gives plugins no way to hide the echo line itself.
+The color is picked once, with the first name, and stays until `/clear`. A plugin can only reach the prompt bar through `/color`, so the plugin runs it once the first turn ends, and a `session.append` hook empties that run's echo and output rows as they are stored, so nothing shows in the transcript.
 
 Colors are coordinated through `~/.claude/tintname/colors.json` (session id to color). A claim counts only while its session is listed in `~/.claude/sessions/`, so ended or cleared sessions free their color by themselves.
 
@@ -41,7 +41,8 @@ If you name a session with `/rename` or `claude --name`, the plugin sees a title
 ## Limitations
 
 - Two sessions picking a color in the same instant can get the same one.
-- The first prompt waits for its name, typically 1 to 2 seconds.
+- The first prompt waits for its name, typically 1 to 2 seconds; the color follows when the first turn ends.
+- The emptied `/color` rows stay in the transcript file as `(no content)`.
 - After `/clear` the old name stays until the next prompt.
 - A color you set by hand with `/color` is not known to other sessions.
 - It uses Claude Code's plugin hooks API, which is in early access and may change between releases.

@@ -124,7 +124,7 @@ const submit = ($: Engine, sessionTitle?: string) =>
     ...(sessionTitle === undefined ? {} : { session_title: sessionTitle }),
   })
 
-test('names the session at the first prompt, before the turn runs', async ($, on) => {
+test('names the session at the first prompt, colors it when the turn ends', async ($, on) => {
   const { asked, commands } = world(on, '"login-redirect-fix red"')
   const clock = mock.clock(on)
 
@@ -134,6 +134,10 @@ test('names the session at the first prompt, before the turn runs', async ($, on
   expect(asked.length).toBe(1)
   expect(asked[0]).toContain('First prompt:\nnext')
   expect(result.sessionTitle).toBe('login-redirect-fix')
+  expect(commands).toEqual([])
+
+  await completeTurn($, clock)
+
   expect(commands).toEqual(['/color red'])
 })
 
@@ -293,6 +297,7 @@ test('starts over after /clear', async ($, on) => {
   on('classic.SessionStart', () => ({}))
 
   await submit($)
+  await completeTurn($, clock)
   await $.classic.SessionStart({
     session_id: SESSION_ID,
     source: 'clear',
@@ -302,7 +307,7 @@ test('starts over after /clear', async ($, on) => {
 
   reply = 'rust-rewrite orange'
   const result = await submit($, 'login-redirect-fix')
-  await clock.advance(1)
+  await completeTurn($, clock)
 
   expect(asked[1]).toContain('Current name: (none)')
   expect(asked[1]).toContain('Color rules')

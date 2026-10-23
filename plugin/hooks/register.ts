@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import {
   SYSTEM_PROMPT,
   buildTitlePrompt,
+  colorRunIn,
   freeColors,
   isDue,
   isModelNotFound,
@@ -162,7 +163,7 @@ const consult = async (
   return newColor === undefined ? { record: checked } : { record: checked, newColor }
 }
 
-/** `/color` is the only way a plugin reaches the prompt bar; its output row is hidden. */
+/** `/color` is the only way a plugin reaches the prompt bar; its rows are emptied as stored. */
 const setColor = ($: EngineInterface, color: Color): void => {
   $.clock.after(0, () => {
     $.command
@@ -194,6 +195,14 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+    if (e.agentId === undefined) {
+      const sessionId = await $.session.id()
+      const record = await readRecord($, sessionId)
+      if (record.pendingColor !== undefined) {
+        await writeRecord($, sessionId, { ...record, pendingColor: undefined })
+        setColor($, record.pendingColor)
+      }
+    }
     if (e.agentId === undefined && !e.isAborted && !isChecking) {
       isChecking = true
       $.clock.after(0, () => {
@@ -207,19 +216,26 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
-    const { command, args } = e.props
-    if (command !== 'rename' && command !== 'color') return next(e)
+  /**
+   * Empties the rows of a `/color` run this plugin made, the echo and the
+   * output alike: an empty row is stored as `(no content)` and drawn as nothing.
+   */
+  on('session.append', { door: 'command' }, async ($, e, next) => {
+    const block = e.message.content[0]
+    const text = block?.type === 'text' && typeof block.text === 'string' ? block.text : ''
+    const color = colorRunIn(text)
+    if (color === undefined) return next(e)
     const record = await readRecord($, await $.session.id())
-    if (!(record.ran ?? []).includes(`${command} ${args}`)) return next(e)
-    const { Box } = $.ui.resolve(e)
-    return Box({})
+    if (!(record.ran ?? []).includes(`color ${color}`)) return next(e)
+    return next({ ...e, message: { ...e.message, content: [] } })
   })
 
   /**
    * The first prompt is named before it is sent, so the session carries its
    * name from the start, also after `/clear`; the wait is bounded by
    * `FIRST_TIMEOUT_MS`. Without a name, the check after the turn tries again.
+   * Its color waits for the turn to end: a `/color` queued mid-turn shows as a
+   * preview row no hook reaches.
    */
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const result = await next(e)
@@ -235,8 +251,9 @@ export const register: Register = (on, options) => {
             ? { ...consulted.record, checkedAt: undefined }
             : consulted.record
         ;({ record, title } = onPrompt(named, e.session_title))
+        if (consulted.newColor !== undefined)
+          record = { ...record, pendingColor: consulted.newColor }
         await writeRecord($, e.session_id, record)
-        if (consulted.newColor !== undefined) setColor($, consulted.newColor)
       }
     }
     return title === undefined ? result : { ...result, sessionTitle: title }

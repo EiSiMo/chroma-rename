@@ -3,6 +3,7 @@ import {
   COLORS,
   MAX_NAME_LENGTH,
   buildTitlePrompt,
+  colorRunIn,
   cleanPrompt,
   isDue,
   isModelNotFound,
@@ -282,5 +283,25 @@ describe('onModelMissing', () => {
       checkedAt: 4,
       isModelWarned: true,
     })
+  })
+})
+
+describe('colorRunIn', () => {
+  it('reads the color of a /color echo and output row', () => {
+    expect(
+      colorRunIn(
+        '<command-name>/color</command-name>\n  <command-message>color</command-message>\n  <command-args>yellow</command-args>',
+      ),
+    ).toBe('yellow')
+    expect(
+      colorRunIn('<local-command-stdout>Session color set to: yellow</local-command-stdout>'),
+    ).toBe('yellow')
+  })
+
+  it('ignores other rows', () => {
+    expect(colorRunIn('<command-name>/rename</command-name><command-args>x</command-args>')).toBe(
+      undefined,
+    )
+    expect(colorRunIn('hello')).toBe(undefined)
   })
 })

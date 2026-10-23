@@ -25,6 +25,8 @@ export type SessionRecord = {
   readonly applied?: string
   /** A name computed after a turn, waiting for the next prompt to apply it. */
   readonly pending?: string
+  /** A color picked at the first prompt, waiting for the turn to end to be set. */
+  readonly pendingColor?: Color
   /** The color this plugin last set with `/color`. */
   readonly color?: Color
   /** The `/color` runs this plugin made, as `color <args>`, newest last. */
@@ -296,3 +298,11 @@ export const onRan = (record: SessionRecord, run: string): SessionRecord => ({
   ...record,
   ran: [...(record.ran ?? []).filter((r) => r !== run), run].slice(-MAX_RAN),
 })
+
+const COLOR_ECHO =
+  /^<command-name>\/color<\/command-name>[\s\S]*<command-args>([^<]*)<\/command-args>/
+const COLOR_OUTPUT = /^<local-command-stdout>Session color set to: ([a-z]+)<\/local-command-stdout>/
+
+/** The color a stored `/color` row names, its echo or its output, or `undefined` for any other row. */
+export const colorRunIn = (text: string): string | undefined =>
+  (COLOR_ECHO.exec(text) ?? COLOR_OUTPUT.exec(text))?.[1]

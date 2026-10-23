@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Each session gets a prompt bar color picked by the model to fit its subject, coordinated across open sessions so no two share one.
 - `/clear` gives the session a fresh name and color at its next prompt.
 - The first prompt is named before it is sent, silently through `sessionTitle`; later renames apply at the next prompt.
-- The `/color` command's output row is hidden.
+- The `/color` run leaves no row in the transcript: it runs once the first turn ends, and its rows are emptied as they are stored.
 
 ### Changed
 
