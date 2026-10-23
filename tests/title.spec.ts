@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   COLORS,
   MAX_FREE_LENGTH,
+  MAX_HOLDERS,
+  claimsOf,
+  withHolder,
   MAX_NAME_LENGTH,
   STYLES,
   buildTitlePrompt,
@@ -448,5 +451,36 @@ describe('onUserColor', () => {
 
   it('clears the color on default', () => {
     expect(onUserColor({ color: 'red' }, undefined).color).toBeUndefined()
+  })
+})
+
+describe('withHolder', () => {
+  const isLive = (id: string) => id !== 'gone'
+
+  it('adds the session, keeping when it first took the color', () => {
+    expect(withHolder({ a: 1 }, 's', true, 5, isLive)).toEqual({ a: 1, s: 5 })
+    expect(withHolder({ s: 2 }, 's', true, 5, isLive)).toEqual({ s: 2 })
+  })
+
+  it('removes the session and drops ended ones', () => {
+    expect(withHolder({ s: 1, gone: 2, a: 3 }, 's', false, 5, isLive)).toEqual({ a: 3 })
+  })
+
+  it('keeps only the newest holders', () => {
+    const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`h${i}`, i]))
+    const kept = withHolder(many, 's', true, 100, isLive)
+    expect(Object.keys(kept).length).toBe(MAX_HOLDERS)
+    expect(kept.s).toBe(100)
+    expect(kept.h0).toBeUndefined()
+  })
+})
+
+describe('claimsOf', () => {
+  it("lists other live sessions' colors with their idle time", () => {
+    const live = (id: string) => (id === 'gone' ? undefined : id === 'b' ? { idleSince: 7 } : {})
+    expect(claimsOf({ red: { s: 1, a: 1 }, blue: { b: 1, gone: 1 } }, 's', live)).toEqual([
+      { color: 'red' },
+      { color: 'blue', idleSince: 7 },
+    ])
   })
 })
