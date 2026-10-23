@@ -1,6 +1,6 @@
 # tintname
 
-A Claude Code plugin that gives every session a short name and its own prompt bar color, so your open sessions stay easy to tell apart.
+A plugin for the Claude Code CLI that gives every session a short name and its own prompt bar color, so your open sessions stay easy to tell apart.
 
 ![tintname names a Rust session file-line-reading in orange, then after /clear a globe session rotating-globe in blue](docs/demo.gif)
 
@@ -12,9 +12,11 @@ A Claude Code plugin that gives every session a short name and its own prompt ba
 - **Familiar topics look familiar.** Pick up earlier work in a new session and it gets the same name and color again.
 - **Your choices win.** Rename or recolor a session yourself and tintname leaves it alone.
 - **Your language.** A German conversation gets a German name.
-- **Runs anywhere Claude Code runs.** Linux, macOS and Windows, no extra tools.
+- **Runs on every system.** Linux, macOS and Windows, no extra tools.
 
 ## Install
+
+tintname is for the Claude Code CLI in the terminal only. The desktop app and IDE extensions do not show its names and colors.
 
 ```text
 /plugin install tintname --marketplace EiSiMo/tintname
