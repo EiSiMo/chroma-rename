@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.3.3] - 2026-10-23
+
+### Added
+
 - The README, now also shipped in the plugin folder, lists the files tintname writes, the one command it runs and what each hook changes.
 
 ### Changed
