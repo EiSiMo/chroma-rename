@@ -124,41 +124,39 @@ const submit = ($: Engine, sessionTitle?: string) =>
     ...(sessionTitle === undefined ? {} : { session_title: sessionTitle }),
   })
 
-test('titles the session at the prompt after the first turn', async ($, on) => {
-  const { asked } = world(on, '"login-redirect-fix red"')
+test('names the session right after the first turn', async ($, on) => {
+  const { asked, commands } = world(on, '"login-redirect-fix red"')
   const clock = mock.clock(on)
 
   await completeTurn($, clock)
-  const result = await submit($)
 
   expect(asked.length).toBe(1)
   expect(asked[0]).toContain('The login page redirects forever')
-  expect(result.sessionTitle).toBe('login-redirect-fix')
+  expect(commands).toEqual(['/rename login-redirect-fix', '/color red'])
 })
 
 test('leaves a session the person named alone', async ($, on) => {
-  const { asked } = world(on, 'login-redirect-fix red')
+  const { asked, commands } = world(on, 'login-redirect-fix red')
   const clock = mock.clock(on)
 
-  const named = await submit($, 'my own name')
+  await submit($, 'my own name')
   await completeTurn($, clock)
-  const result = await submit($, 'my own name')
 
-  expect(named.sessionTitle).toBe(undefined)
   expect(asked.length).toBe(0)
-  expect(result.sessionTitle).toBe(undefined)
+  expect(commands).toEqual([])
 })
 
-test('does not re-apply a title the session already has', async ($, on) => {
-  world(on, 'login-redirect-fix red')
+test('reads its own rename as its own at the next prompt', async ($, on) => {
+  let turns = 1
+  const { asked } = world(on, 'login-redirect-fix red', () => turns)
   const clock = mock.clock(on)
 
   await completeTurn($, clock)
-  const first = await submit($)
-  const second = await submit($, 'login-redirect-fix')
+  await submit($, 'login-redirect-fix')
+  turns = 2
+  await completeTurn($, clock)
 
-  expect(first.sessionTitle).toBe('login-redirect-fix')
-  expect(second.sessionTitle).toBe(undefined)
+  expect(asked.length).toBe(2)
 })
 
 test(
@@ -216,7 +214,7 @@ test('sets the color it picked and claims it', async ($, on) => {
 
   await completeTurn($, clock)
 
-  expect(commands).toEqual(['/color red'])
+  expect(commands).toContain('/color red')
   expect(JSON.parse(files.get(CLAIMS) ?? '{}')).toEqual({ [SESSION_ID]: 'red' })
 })
 
@@ -228,11 +226,11 @@ test('takes a free color when another live session holds the wanted one', async 
 
   await completeTurn($, clock)
 
-  expect(commands).toEqual(['/color blue'])
+  expect(commands).toContain('/color blue')
   expect(JSON.parse(files.get(CLAIMS) ?? '{}')).toEqual({ other: 'red', [SESSION_ID]: 'blue' })
 })
 
-test('keeps name and color when the model says KEEP', async ($, on) => {
+test('keeps the name when the model says KEEP', async ($, on) => {
   let turns = 1
   let reply = 'login-redirect-fix red'
   const { commands } = world(
@@ -243,14 +241,32 @@ test('keeps name and color when the model says KEEP', async ($, on) => {
   const clock = mock.clock(on)
 
   await completeTurn($, clock)
-  await submit($)
+  await submit($, 'login-redirect-fix')
   turns = 2
   reply = 'KEEP'
   await completeTurn($, clock)
-  const result = await submit($, 'login-redirect-fix')
 
-  expect(commands).toEqual(['/color red'])
-  expect(result.sessionTitle).toBe(undefined)
+  expect(commands).toEqual(['/rename login-redirect-fix', '/color red'])
+})
+
+test('keeps the color once set, even on a new name', async ($, on) => {
+  let turns = 1
+  let reply = 'login-redirect-fix red'
+  const { asked, commands } = world(
+    on,
+    () => reply,
+    () => turns,
+  )
+  const clock = mock.clock(on)
+
+  await completeTurn($, clock)
+  await submit($, 'login-redirect-fix')
+  turns = 2
+  reply = 'rust-rewrite orange'
+  await completeTurn($, clock)
+
+  expect(asked[1]).not.toContain('Color rules')
+  expect(commands).toEqual(['/rename login-redirect-fix', '/color red', '/rename rust-rewrite'])
 })
 
 test('starts over after /clear', async ($, on) => {
@@ -259,7 +275,7 @@ test('starts over after /clear', async ($, on) => {
   on('classic.SessionStart', () => ({}))
 
   await completeTurn($, clock)
-  await submit($)
+  await submit($, 'login-redirect-fix')
   await $.classic.SessionStart({
     session_id: SESSION_ID,
     source: 'clear',
@@ -267,6 +283,6 @@ test('starts over after /clear', async ($, on) => {
   })
   await clock.advance(1)
 
-  expect(commands).toEqual(['/color red', '/color default'])
+  expect(commands).toEqual(['/rename login-redirect-fix', '/color red', '/color default'])
   expect(JSON.parse(files.get(CLAIMS) ?? '{}')).toEqual({})
 })

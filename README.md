@@ -24,7 +24,7 @@ When Claude finishes replying, the plugin checks whether the name is due a revie
 
 Each check sends the model (Haiku by default) the current name and color, the colors still free, your first prompt, your 8 most recent prompts and Claude's latest reply. It answers with one line, `<name> <color>` or `KEEP`.
 
-The name is applied at your next prompt through the prompt hook's `sessionTitle` field, which adds nothing to the conversation. The color is set right away by running `/color <color>`, the only way a plugin can reach the prompt bar; that command's short output line does land in the transcript.
+Name and color are set right away by running `/rename <name>` and `/color <color>`; their short output lines show in the transcript. The color is picked once and stays until `/clear`.
 
 Colors are coordinated through `~/.claude/tintname/colors.json` (session id to color). A claim counts only while its session is listed in `~/.claude/sessions/`, so ended or cleared sessions free their color by themselves.
 
@@ -40,8 +40,7 @@ If you name a session with `/rename` or `claude --name`, the plugin sees a title
 
 ## Limitations
 
-- The name shows up one prompt late, since it's applied at your next prompt.
-- Two sessions checking in the same instant can pick the same color; the next rename sorts it out.
+- Two sessions picking a color in the same instant can get the same one.
 - A color you set by hand with `/color` is not known to other sessions.
 - It uses Claude Code's plugin hooks API, which is in early access and may change between releases.
 

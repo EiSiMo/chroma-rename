@@ -104,9 +104,9 @@ const takenByOthers = async ($: EngineInterface, sessionId: string): Promise<Col
 }
 
 /**
- * Names are computed after a turn, off the prompt's path, and applied at the
- * next prompt through `sessionTitle`. The color is set right away with
- * `/color`, the only way a plugin reaches the prompt bar.
+ * Names and colors are computed after a turn, off the prompt's path, and set
+ * right away with `/rename` and `/color`. The record is written first, so the
+ * title the next prompt carries reads as the plugin's own.
  */
 const check = async ($: EngineInterface, model: string): Promise<void> => {
   const sessionId = await $.session.id()
@@ -115,7 +115,7 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
   if (record.isUserNamed || !isDue(turns, record.checkedAt)) return
 
   const free = freeColors(await takenByOthers($, sessionId))
-  const current = { name: record.pending ?? record.applied, color: record.color }
+  const current = { name: record.applied, color: record.color }
   const prompt = buildTitlePrompt(await $.session.messages(), current, free)
   if (prompt === null) return
 
@@ -144,6 +144,7 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
   const color = pickColor(parsed.color, latest.color, freeColors(await takenByOthers($, sessionId)))
   await writeClaim($, sessionId, color)
   await writeRecord($, sessionId, onChecked(latest, turns, parsed.name, color))
+  if (parsed.name !== latest.applied) await $.command.run({ command: 'rename', args: parsed.name })
   if (color !== undefined && color !== latest.color) {
     await $.command.run({ command: 'color', args: color })
   }
@@ -171,9 +172,9 @@ export const register: Register = (on, options) => {
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const result = await next(e)
     const record = await readRecord($, e.session_id)
-    const { record: settled, title } = onPrompt(record, e.session_title)
+    const settled = onPrompt(record, e.session_title)
     if (settled !== record) await writeRecord($, e.session_id, settled)
-    return title === undefined ? result : { ...result, sessionTitle: title }
+    return result
   }).catch(($, e, next) => next(e))
 
   on('classic.SessionStart', async ($, e, next) => {

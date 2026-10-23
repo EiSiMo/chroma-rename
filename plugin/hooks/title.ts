@@ -23,8 +23,6 @@ export type Color = (typeof COLORS)[number]
 export type SessionRecord = {
   /** The name this plugin last handed to Claude Code. */
   readonly applied?: string
-  /** A name computed after a turn, waiting for the next prompt to apply it. */
-  readonly pending?: string
   /** The color this plugin last set with `/color`. */
   readonly color?: Color
   /** The prompt count at the last check. */
@@ -42,7 +40,7 @@ export const MAX_NAME_LENGTH = 40
 const FIRST_PROMPT_CHARS = 800
 const LATER_PROMPT_CHARS = 300
 const LATER_PROMPTS = 8
-const REPLY_CHARS = 800
+const REPLY_CHARS = 400
 
 const DROPPED_BLOCKS =
   /<(system-reminder|local-command-stdout|local-command-stderr|local-command-caveat|task-notification)>[\s\S]*?<\/\1>/g
@@ -83,10 +81,10 @@ const lastReply = (messages: readonly Message[]): string =>
 export type Current = { readonly name?: string; readonly color?: Color }
 
 /**
- * The request for a name and color: the rules, the current name and color,
- * the colors still free, the opening prompt, the most recent prompts and
- * Claude's latest reply. Returns `null` when the session holds no prompt
- * worth naming yet.
+ * The request for a name, and for a color while the session has none: the
+ * rules, the current name, the colors still free, the opening prompt, the
+ * most recent prompts and Claude's latest reply. Returns `null` when the
+ * session holds no prompt worth naming yet.
  */
 export const buildTitlePrompt = (
   messages: readonly Message[],
@@ -101,24 +99,33 @@ export const buildTitlePrompt = (
   const reply = lastReply(messages)
   const choices = free.length > 0 ? free : COLORS
 
+  const needsColor = current.color === undefined
+
   return [
-    'Reply with exactly one line: "<name> <color>", or "KEEP" to keep the current name and color.',
+    needsColor
+      ? 'Reply with exactly one line: "<name> <color>".'
+      : 'Reply with exactly one line: "<name>", or "KEEP" to keep the current name.',
     '',
     'Name rules:',
     `- 1 to ${MAX_WORDS} words in kebab-case, all lowercase, for example "rust-rewrite" or "login-redirect-fix".`,
     '- Write it in the language the person writes in: a German conversation gets a German name such as "karten-export".',
+    '- Name what the person is doing in this session, judged from their prompts. Claude\'s reply is context only: asking which tests fail is "failing-tests", not the module the answer happens to discuss.',
     '- Name the main piece of work, not the latest prompt. Side questions and follow-ups do not change the topic.',
     '- Leave out the project or repository name unless it is the subject.',
-    '',
-    'Color rules:',
-    `- Pick one of: ${choices.join(', ')}.`,
-    '- Pick the color that fits the subject best: rust or fire is orange, a globe, sky or water is blue, plants or growth is green, errors or deletion is red, docs or writing is yellow.',
-    '',
-    'When to keep:',
-    '- If there is a current name, reply "KEEP" unless the session has clearly switched to a different topic. A refinement, a next step or a detail of the same work is not a switch. When in doubt, KEEP.',
+    ...(needsColor
+      ? [
+          '',
+          'Color rules:',
+          `- Pick one of: ${choices.join(', ')}.`,
+          '- Pick the color that fits the name best: rust or fire is orange, a globe, sky or water is blue, plants or growth is green, errors or deletion is red, docs or writing is yellow.',
+        ]
+      : [
+          '',
+          'When to keep:',
+          '- Reply "KEEP" unless the person has clearly switched to a different topic. A refinement, a next step or a detail of the same work is not a switch. When in doubt, KEEP.',
+        ]),
     '',
     `Current name: ${current.name ?? '(none)'}`,
-    `Current color: ${current.color ?? '(none)'}`,
     '',
     'First prompt:',
     clip(first, FIRST_PROMPT_CHARS),
@@ -131,7 +138,9 @@ export const buildTitlePrompt = (
             : 'Later prompts, oldest first:',
           ...later.map((p) => `- ${clip(p, LATER_PROMPT_CHARS)}`),
         ]),
-    ...(reply === '' ? [] : ['', "Claude's latest reply:", clip(reply, REPLY_CHARS)]),
+    ...(reply === ''
+      ? []
+      : ['', "Claude's latest reply (context only):", clip(reply, REPLY_CHARS)]),
   ].join('\n')
 }
 
@@ -182,17 +191,18 @@ export const freeColors = (taken: readonly Color[]): Color[] =>
   COLORS.filter((c) => !taken.includes(c))
 
 /**
- * The color to show: the wanted one if free, else the current one if free,
- * else the first free one. With every color taken, the wanted one is shared.
+ * The color to show: once set it stays, until `/clear`. A new session gets
+ * the wanted color if free, else the first free one; with every color taken,
+ * the wanted one is shared.
  */
 export const pickColor = (
   wanted: Color | undefined,
   current: Color | undefined,
   free: readonly Color[],
 ): Color | undefined => {
+  if (current !== undefined) return current
   if (wanted !== undefined && free.includes(wanted)) return wanted
-  if (current !== undefined && free.includes(current)) return current
-  return free[0] ?? wanted ?? current
+  return free[0] ?? wanted
 }
 
 /**
@@ -202,29 +212,14 @@ export const pickColor = (
 export const isDue = (turns: number, checkedAt: number | undefined): boolean =>
   turns >= 1 && (checkedAt === undefined || turns - checkedAt >= Math.min(checkedAt, MAX_GAP))
 
-export type PromptOutcome = { readonly record: SessionRecord; readonly title?: string }
-
 /**
  * Settles a prompt against the record. A custom title this plugin did not set
- * means the person named the session, which ends the plugin's work on it;
- * otherwise a pending name is handed over for the prompt to apply.
+ * means the person named the session, which ends the plugin's work on it.
  */
-export const onPrompt = (
-  record: SessionRecord,
-  sessionTitle: string | undefined,
-): PromptOutcome => {
-  if (record.isUserNamed) return { record }
-  if (sessionTitle !== undefined && sessionTitle !== record.applied) {
-    return { record: { ...record, isUserNamed: true, pending: undefined } }
-  }
-  if (record.pending === undefined || record.pending === sessionTitle) {
-    return { record: { ...record, pending: undefined } }
-  }
-  return {
-    record: { ...record, applied: record.pending, pending: undefined },
-    title: record.pending,
-  }
-}
+export const onPrompt = (record: SessionRecord, sessionTitle: string | undefined): SessionRecord =>
+  !record.isUserNamed && sessionTitle !== undefined && sessionTitle !== record.applied
+    ? { ...record, isUserNamed: true }
+    : record
 
 /**
  * The record after `/clear`: a fresh start, except that the title the session
@@ -242,7 +237,7 @@ export const onChecked = (
 ): SessionRecord => ({
   ...record,
   checkedAt: turns,
-  pending: name !== null && name !== record.applied ? name : undefined,
+  ...(name === null ? {} : { applied: name }),
   ...(color === undefined ? {} : { color }),
 })
 

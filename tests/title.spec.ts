@@ -68,9 +68,10 @@ describe('buildTitlePrompt', () => {
       COLORS,
     )
     expect(prompt).toContain('Current name: cache-countdown')
-    expect(prompt).toContain('Current color: cyan')
+    expect(prompt).toContain('or "KEEP"')
+    expect(prompt).not.toContain('Color rules')
     expect(prompt).toContain('First prompt:\nadd a cache countdown')
-    expect(prompt).toContain("Claude's latest reply:\nAdded it to the status line.")
+    expect(prompt).toContain("Claude's latest reply (context only):\nAdded it to the status line.")
     expect(prompt).not.toContain('Later prompts')
   })
 
@@ -143,11 +144,12 @@ describe('parseReply', () => {
 
 describe('pickColor', () => {
   it('takes the wanted color when free', () => {
-    expect(pickColor('orange', 'blue', ['orange', 'blue'])).toBe('orange')
+    expect(pickColor('orange', undefined, ['orange', 'blue'])).toBe('orange')
   })
 
-  it('keeps the current color when the wanted one is taken', () => {
-    expect(pickColor('orange', 'blue', ['blue', 'pink'])).toBe('blue')
+  it('never changes a color once set', () => {
+    expect(pickColor('orange', 'blue', ['orange', 'blue'])).toBe('blue')
+    expect(pickColor('orange', 'blue', [])).toBe('blue')
   })
 
   it('falls back to the first free color', () => {
@@ -155,7 +157,7 @@ describe('pickColor', () => {
   })
 
   it('shares the wanted color when none is free', () => {
-    expect(pickColor('orange', 'blue', [])).toBe('orange')
+    expect(pickColor('orange', undefined, [])).toBe('orange')
   })
 })
 
@@ -188,39 +190,18 @@ describe('isDue', () => {
 })
 
 describe('onPrompt', () => {
-  it('hands over a pending title and records it as applied', () => {
-    expect(onPrompt({ pending: 'New title', checkedAt: 2 }, undefined)).toEqual({
-      record: { applied: 'New title', checkedAt: 2 },
-      title: 'New title',
-    })
-  })
-
-  it('keeps the missing-model warning when it applies a title', () => {
-    expect(
-      onPrompt({ pending: 'New title', isModelWarned: true }, undefined).record.isModelWarned,
-    ).toBe(true)
-  })
-
-  it('replaces its own earlier title', () => {
-    const outcome = onPrompt({ applied: 'Old', pending: 'New', checkedAt: 4 }, 'Old')
-    expect(outcome.title).toBe('New')
+  it('reads its own title as its own', () => {
+    const record = { applied: 'mine', checkedAt: 2 }
+    expect(onPrompt(record, 'mine')).toBe(record)
   })
 
   it('treats a title it did not set as the person naming the session', () => {
-    expect(onPrompt({ applied: 'Mine', pending: 'Next' }, 'Theirs')).toEqual({
-      record: { applied: 'Mine', isUserNamed: true },
-    })
+    expect(onPrompt({ applied: 'mine' }, 'theirs')).toEqual({ applied: 'mine', isUserNamed: true })
   })
 
   it('stays out once the person has named the session', () => {
     const record = { isUserNamed: true }
-    expect(onPrompt(record, undefined)).toEqual({ record })
-  })
-
-  it('drops a pending title the session already has', () => {
-    expect(onPrompt({ applied: 'Same', pending: 'Same' }, 'Same')).toEqual({
-      record: { applied: 'Same', pending: undefined },
-    })
+    expect(onPrompt(record, 'anything')).toBe(record)
   })
 })
 
@@ -232,25 +213,20 @@ describe('onClear', () => {
 })
 
 describe('onChecked', () => {
-  it('records the color it settled on', () => {
+  it('records the name and color it settled on', () => {
     expect(onChecked({}, 1, 'rust-rewrite', 'orange')).toEqual({
       checkedAt: 1,
-      pending: 'rust-rewrite',
+      applied: 'rust-rewrite',
       color: 'orange',
     })
   })
 
-  it('queues a new title', () => {
-    expect(onChecked({ applied: 'Old' }, 4, 'New')).toEqual({
-      applied: 'Old',
+  it('keeps the name when there is no new one', () => {
+    expect(onChecked({ applied: 'same', color: 'red' }, 4, null)).toEqual({
+      applied: 'same',
+      color: 'red',
       checkedAt: 4,
-      pending: 'New',
     })
-  })
-
-  it('queues nothing when the title is unchanged or missing', () => {
-    expect(onChecked({ applied: 'Same' }, 4, 'Same').pending).toBeUndefined()
-    expect(onChecked({ applied: 'Same', pending: 'Stale' }, 4, null).pending).toBeUndefined()
   })
 })
 
@@ -283,7 +259,7 @@ describe('onModelMissing', () => {
   })
 
   it('records the check and the warning', () => {
-    expect(onModelMissing({ applied: 'Old', pending: 'Stale' }, 4, 'haikoo').record).toEqual({
+    expect(onModelMissing({ applied: 'Old' }, 4, 'haikoo').record).toEqual({
       applied: 'Old',
       checkedAt: 4,
       isModelWarned: true,
