@@ -4,6 +4,16 @@ A Claude Code plugin that gives every session a short name and its own prompt ba
 
 ![tintname names a Rust session file-line-reading in orange, then after /clear a globe session rotating-globe in blue](docs/demo.gif)
 
+## What sets it apart
+
+- **A color per session, not just a name.** Open sessions get different colors, so you can tell them apart at a glance.
+- **Named from the first prompt.** The name is there before the first answer and changes only when the topic really does.
+- **Nothing in your conversation.** Names and colors are set without adding messages Claude reads.
+- **Familiar topics look familiar.** Pick up earlier work in a new session and it gets the same name and color again.
+- **Your choices win.** Rename or recolor a session yourself and tintname leaves it alone.
+- **Your language.** A German conversation gets a German name.
+- **Runs anywhere Claude Code runs.** Linux, macOS and Windows, no extra tools.
+
 ## Install
 
 ```text
