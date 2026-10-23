@@ -11,7 +11,7 @@ A plugin for the Claude Code CLI that gives every session a short name and its o
 - **Nothing in your conversation.** Names and colors are set without adding messages Claude reads.
 - **Familiar topics look familiar.** Pick up earlier work in a new session and it gets the same name and color again.
 - **Your choices win.** Rename or recolor a session yourself and chroma-rename leaves it alone.
-- **Your language.** A German conversation gets a German name.
+- **Your naming style.** kebab-case, snake_case, camelCase, PascalCase, Title Case, Sentence case or free text, as you choose.
 - **Runs on every system.** Linux, macOS and Windows, no extra tools.
 
 ## Install
