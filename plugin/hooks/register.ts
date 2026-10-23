@@ -354,10 +354,13 @@ const consult = async (
 /** `/color` is the only way a plugin reaches the prompt bar; its rows are emptied as stored. */
 const setColor = ($: EngineInterface, color: Color): void => {
   $.clock.after(0, () => {
-    $.command.run({ command: 'color', args: color }).catch(async (error: unknown) => {
-      $.ui.log(`color failed: ${String(error)}`)
-      log($, await $.session.id(), `/color ${color} failed: ${String(error)}`)
-    })
+    $.command.run({ command: 'color', args: color }).then(
+      async () => log($, await $.session.id(), `set color ${color}`),
+      async (error: unknown) => {
+        $.ui.log(`color failed: ${String(error)}`)
+        log($, await $.session.id(), `/color ${color} failed: ${String(error)}`)
+      },
+    )
   })
 }
 
@@ -408,6 +411,9 @@ export const register: Register = (on, options) => {
       })
     }
     return result
+  }).catch(async ($, e, next) => {
+    log($, await $.session.id(), `turn hook failed: ${String(next.error)}`)
+    return next(e)
   })
 
   /**
@@ -441,6 +447,9 @@ export const register: Register = (on, options) => {
       )
       await claim($, sessionId, () => (isReset ? undefined : (color ?? record.color)))
     }
+    return next(e)
+  }).catch(async ($, e, next) => {
+    log($, await $.session.id(), `transcript hook failed: ${String(next.error)}`)
     return next(e)
   })
 
@@ -484,7 +493,25 @@ export const register: Register = (on, options) => {
     }
     if (title !== undefined) log($, e.session_id, `applied name ${title}`)
     return title === undefined ? result : { ...result, sessionTitle: title }
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    log($, e.session_id, `prompt hook failed: ${String(next.error)}`)
+    return next(e)
+  })
+
+  /**
+   * An ending session lets its color go at once, so the next session can take
+   * it; the log is written before the process exits. A session that crashes
+   * fires nothing, so the next start clears its claim.
+   */
+  on('session.end', async ($, e, next) => {
+    await claim($, e.sessionId, () => undefined)
+    log($, e.sessionId, `ended (${e.reason}), color released`)
+    await logged
+    return next(e)
+  }).catch(($, e, next) => {
+    log($, e.sessionId, `session end hook failed: ${String(next.error)}`)
+    return next(e)
+  })
 
   /**
    * `/clear` and a fork of a session the plugin named start over; a fork
@@ -494,13 +521,15 @@ export const register: Register = (on, options) => {
    */
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
-    if (e.source === 'clear' || e.source === 'fork' || e.source === 'resume') {
-      log(
-        $,
-        e.session_id,
-        `${e.source}${e.session_title === undefined ? '' : ` of ${e.session_title}`}`,
-      )
-    }
+    const version = await $.fs
+      .read(`${$.plugin.root}/.claude-plugin/plugin.json`)
+      .then((text) => String((JSON.parse(text) as { version?: unknown }).version))
+      .catch(() => '?')
+    log(
+      $,
+      e.session_id,
+      `${e.source}${e.session_title === undefined ? '' : ` of ${e.session_title}`} (v${version}, ${model}, ${style})`,
+    )
     if (e.source === 'clear') {
       await writeRecord($, e.session_id, onClear(e.session_title))
       await claim($, e.session_id, () => undefined)
@@ -520,5 +549,8 @@ export const register: Register = (on, options) => {
     }
     await prune($, e.session_id)
     return result
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    log($, e.session_id, `session start hook failed: ${String(next.error)}`)
+    return next(e)
+  })
 }

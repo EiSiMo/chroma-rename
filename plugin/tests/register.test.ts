@@ -622,3 +622,27 @@ test('logs the earlier sessions it offered', async ($, on) => {
 
   expect(files.get(`${DIR}/tintname/tintname.log`)).toContain('earlier [karten-export (blue)]')
 })
+
+test('lets its color go when the session ends', async ($, on) => {
+  const { files } = world(on, 'login-redirect-fix red')
+  const clock = mock.clock(on)
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  expect(claimsIn(files)).toEqual({ [SESSION_ID]: 'red' })
+
+  await drive(
+    clock,
+    $.session.end({
+      reason: 'prompt_input_exit',
+      sessionId: SESSION_ID,
+      resume: { id: SESSION_ID },
+    }),
+  )
+
+  expect(claimsIn(files)).toEqual({})
+  expect(files.get(`${DIR}/tintname/tintname.log`)).toContain(
+    'ended (prompt_input_exit), color released',
+  )
+})
