@@ -1,6 +1,6 @@
 {
   "name": "tintname",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Names Claude Code sessions in short kebab-case and gives each open session its own color.",
   "type": "module",

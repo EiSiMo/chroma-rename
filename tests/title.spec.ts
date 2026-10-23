@@ -10,6 +10,7 @@ import {
   onModelMissing,
   onClear,
   onPrompt,
+  onRan,
   parseReply,
   pickColor,
   freeColors,
@@ -190,18 +191,31 @@ describe('isDue', () => {
 })
 
 describe('onPrompt', () => {
-  it('reads its own title as its own', () => {
-    const record = { applied: 'mine', checkedAt: 2 }
-    expect(onPrompt(record, 'mine')).toBe(record)
+  it('hands over a pending name and records it as applied', () => {
+    expect(onPrompt({ pending: 'new-name', checkedAt: 2 }, undefined)).toEqual({
+      record: { applied: 'new-name', checkedAt: 2 },
+      title: 'new-name',
+    })
+  })
+
+  it('replaces its own earlier name', () => {
+    expect(onPrompt({ applied: 'old', pending: 'new', checkedAt: 4 }, 'old').title).toBe('new')
   })
 
   it('treats a title it did not set as the person naming the session', () => {
-    expect(onPrompt({ applied: 'mine' }, 'theirs')).toEqual({ applied: 'mine', isUserNamed: true })
+    expect(onPrompt({ applied: 'mine', pending: 'next', color: 'red' }, 'theirs')).toEqual({
+      record: { applied: 'mine', color: 'red', isUserNamed: true },
+    })
   })
 
   it('stays out once the person has named the session', () => {
     const record = { isUserNamed: true }
-    expect(onPrompt(record, 'anything')).toBe(record)
+    expect(onPrompt(record, 'anything')).toEqual({ record })
+  })
+
+  it('leaves the record alone when nothing is pending', () => {
+    const record = { applied: 'same', checkedAt: 2 }
+    expect(onPrompt(record, 'same').record).toBe(record)
   })
 })
 
@@ -213,20 +227,24 @@ describe('onClear', () => {
 })
 
 describe('onChecked', () => {
-  it('records the name and color it settled on', () => {
+  it('queues a new name and records the color', () => {
     expect(onChecked({}, 1, 'rust-rewrite', 'orange')).toEqual({
       checkedAt: 1,
-      applied: 'rust-rewrite',
+      pending: 'rust-rewrite',
       color: 'orange',
     })
   })
 
-  it('keeps the name when there is no new one', () => {
-    expect(onChecked({ applied: 'same', color: 'red' }, 4, null)).toEqual({
-      applied: 'same',
-      color: 'red',
-      checkedAt: 4,
-    })
+  it('queues nothing when the name is unchanged or missing', () => {
+    expect(onChecked({ applied: 'same' }, 4, 'same').pending).toBeUndefined()
+    expect(onChecked({ applied: 'same', pending: 'stale' }, 4, null).pending).toBeUndefined()
+  })
+})
+
+describe('onRan', () => {
+  it('keeps the newest runs, each once', () => {
+    const record = onRan(onRan(onRan({}, 'color red'), 'color blue'), 'color red')
+    expect(record.ran).toEqual(['color blue', 'color red'])
   })
 })
 

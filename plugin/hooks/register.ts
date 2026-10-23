@@ -9,15 +9,18 @@ import {
   onClear,
   onModelMissing,
   onPrompt,
+  onRan,
   parseReply,
   pickColor,
   type Color,
+  type Message,
   type SessionRecord,
 } from './title.ts'
 
 const KEY_PREFIX = 'session:'
 const MAX_SESSIONS = 300
 const TIMEOUT_MS = 30_000
+const FIRST_TIMEOUT_MS = 6_000
 
 /** Which session holds which color, shared by every Claude Code process on the machine. */
 type Claims = Readonly<Record<string, Color>>
@@ -103,51 +106,86 @@ const takenByOthers = async ($: EngineInterface, sessionId: string): Promise<Col
     .map(([, color]) => color)
 }
 
-/**
- * Names and colors are computed after a turn, off the prompt's path, and set
- * right away with `/rename` and `/color`. The record is written first, so the
- * title the next prompt carries reads as the plugin's own.
- */
-const check = async ($: EngineInterface, model: string): Promise<void> => {
-  const sessionId = await $.session.id()
-  const record = await readRecord($, sessionId)
-  const turns = await $.session.turns()
-  if (record.isUserNamed || !isDue(turns, record.checkedAt)) return
+type Consulted = { readonly record: SessionRecord; readonly newColor?: Color }
 
+/**
+ * Asks the model for a name and, while the session has none, a color, and
+ * writes the outcome: a changed name waits in `pending` for a prompt to apply
+ * it through `sessionTitle`, which adds nothing to the transcript.
+ */
+const consult = async (
+  $: EngineInterface,
+  model: string,
+  sessionId: string,
+  messages: readonly Message[],
+  turns: number,
+  timeoutMs: number,
+  isFresh = false,
+): Promise<Consulted | undefined> => {
+  const record = await readRecord($, sessionId)
   const free = freeColors(await takenByOthers($, sessionId))
-  const current = { name: record.applied, color: record.color }
-  const prompt = buildTitlePrompt(await $.session.messages(), current, free)
-  if (prompt === null) return
+  const current = isFresh
+    ? { color: record.color }
+    : { name: record.pending ?? record.applied, color: record.color }
+  const prompt = buildTitlePrompt(messages, current, free)
+  if (prompt === null) return undefined
 
   const reply = await $.model.complete({
     model,
     system: SYSTEM_PROMPT,
     prompt,
     maxTokens: 40,
-    timeoutMs: TIMEOUT_MS,
+    timeoutMs,
   })
   const latest = await readRecord($, sessionId)
   if (isModelNotFound(reply)) {
     const { record: checked, warning } = onModelMissing(latest, turns, model)
     await writeRecord($, sessionId, checked)
     if (warning !== undefined) $.ui.toast(warning)
-    return
+    return { record: checked }
   }
 
   const parsed = reply.isAnswered ? parseReply(reply.text) : null
   if (parsed?.kind !== 'name') {
-    await writeRecord($, sessionId, onChecked(latest, turns, null))
+    const checked = onChecked(latest, turns, null)
+    await writeRecord($, sessionId, checked)
     if (latest.color !== undefined) await writeClaim($, sessionId, latest.color)
-    return
+    return { record: checked }
   }
 
   const color = pickColor(parsed.color, latest.color, freeColors(await takenByOthers($, sessionId)))
   await writeClaim($, sessionId, color)
-  await writeRecord($, sessionId, onChecked(latest, turns, parsed.name, color))
-  if (parsed.name !== latest.applied) await $.command.run({ command: 'rename', args: parsed.name })
-  if (color !== undefined && color !== latest.color) {
-    await $.command.run({ command: 'color', args: color })
-  }
+  const newColor = color !== undefined && color !== latest.color ? color : undefined
+  const named = onChecked(latest, turns, parsed.name, color)
+  const checked = newColor === undefined ? named : onRan(named, `color ${newColor}`)
+  await writeRecord($, sessionId, checked)
+  return newColor === undefined ? { record: checked } : { record: checked, newColor }
+}
+
+/** `/color` is the only way a plugin reaches the prompt bar; its output row is hidden. */
+const setColor = ($: EngineInterface, color: Color): void => {
+  $.clock.after(0, () => {
+    $.command
+      .run({ command: 'color', args: color })
+      .catch((error: unknown) => $.ui.log(`color failed: ${String(error)}`))
+  })
+}
+
+/** The check after a turn; its name is applied at the next prompt. */
+const check = async ($: EngineInterface, model: string): Promise<void> => {
+  const sessionId = await $.session.id()
+  const record = await readRecord($, sessionId)
+  const turns = await $.session.turns()
+  if (record.isUserNamed || !isDue(turns, record.checkedAt)) return
+  const consulted = await consult(
+    $,
+    model,
+    sessionId,
+    await $.session.messages(),
+    turns,
+    TIMEOUT_MS,
+  )
+  if (consulted?.newColor !== undefined) setColor($, consulted.newColor)
 }
 
 export const register: Register = (on, options) => {
@@ -169,12 +207,39 @@ export const register: Register = (on, options) => {
     return result
   })
 
+  on('ui.render', { component: 'CommandOutput' }, async ($, e, next) => {
+    const { command, args } = e.props
+    if (command !== 'rename' && command !== 'color') return next(e)
+    const record = await readRecord($, await $.session.id())
+    if (!(record.ran ?? []).includes(`${command} ${args}`)) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return Box({})
+  })
+
+  /**
+   * The first prompt is named before it is sent, so the session carries its
+   * name from the start, also after `/clear`; the wait is bounded by
+   * `FIRST_TIMEOUT_MS`. Without a name, the check after the turn tries again.
+   */
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const result = await next(e)
-    const record = await readRecord($, e.session_id)
-    const settled = onPrompt(record, e.session_title)
-    if (settled !== record) await writeRecord($, e.session_id, settled)
-    return result
+    const stored = await readRecord($, e.session_id)
+    let { record, title } = onPrompt(stored, e.session_title)
+    if (record !== stored) await writeRecord($, e.session_id, record)
+    if (!record.isUserNamed && record.checkedAt === undefined) {
+      const messages = [{ role: 'user', text: e.prompt }] as const
+      const consulted = await consult($, model, e.session_id, messages, 1, FIRST_TIMEOUT_MS, true)
+      if (consulted !== undefined) {
+        const named =
+          consulted.record.pending === undefined
+            ? { ...consulted.record, checkedAt: undefined }
+            : consulted.record
+        ;({ record, title } = onPrompt(named, e.session_title))
+        await writeRecord($, e.session_id, record)
+        if (consulted.newColor !== undefined) setColor($, consulted.newColor)
+      }
+    }
+    return title === undefined ? result : { ...result, sessionTitle: title }
   }).catch(($, e, next) => next(e))
 
   on('classic.SessionStart', async ($, e, next) => {
@@ -182,11 +247,6 @@ export const register: Register = (on, options) => {
     if (e.source !== 'clear') return result
     await writeRecord($, e.session_id, onClear(e.session_title))
     await writeClaim($, e.session_id, undefined)
-    $.clock.after(0, () => {
-      $.command
-        .run({ command: 'color', args: 'default' })
-        .catch((error: unknown) => $.ui.log(`color reset failed: ${String(error)}`))
-    })
     return result
   }).catch(($, e, next) => next(e))
 }

@@ -23,8 +23,12 @@ export type Color = (typeof COLORS)[number]
 export type SessionRecord = {
   /** The name this plugin last handed to Claude Code. */
   readonly applied?: string
+  /** A name computed after a turn, waiting for the next prompt to apply it. */
+  readonly pending?: string
   /** The color this plugin last set with `/color`. */
   readonly color?: Color
+  /** The `/color` runs this plugin made, as `color <args>`, newest last. */
+  readonly ran?: readonly string[]
   /** The prompt count at the last check. */
   readonly checkedAt?: number
   /** Set once the person names the session themselves; the plugin then stays out. */
@@ -36,6 +40,7 @@ export type SessionRecord = {
 export const MAX_GAP = 8
 export const MAX_WORDS = 3
 export const MAX_NAME_LENGTH = 40
+export const MAX_RAN = 20
 
 const FIRST_PROMPT_CHARS = 800
 const LATER_PROMPT_CHARS = 300
@@ -108,7 +113,7 @@ export const buildTitlePrompt = (
     '',
     'Name rules:',
     `- 1 to ${MAX_WORDS} words in kebab-case, all lowercase, for example "rust-rewrite" or "login-redirect-fix".`,
-    '- Write it in the language the person writes in: a German conversation gets a German name such as "karten-export".',
+    '- Write it in the language the person writes in: a German conversation gets a German name such as "karten-export". Keep umlauts and other letters as they are ("übersicht-größe", not "uebersicht-groesse").',
     '- Name what the person is doing in this session, judged from their prompts. Claude\'s reply is context only: asking which tests fail is "failing-tests", not the module the answer happens to discuss.',
     '- Name the main piece of work, not the latest prompt. Side questions and follow-ups do not change the topic.',
     '- Leave out the project or repository name unless it is the subject.',
@@ -212,14 +217,29 @@ export const pickColor = (
 export const isDue = (turns: number, checkedAt: number | undefined): boolean =>
   turns >= 1 && (checkedAt === undefined || turns - checkedAt >= Math.min(checkedAt, MAX_GAP))
 
+export type PromptOutcome = { readonly record: SessionRecord; readonly title?: string }
+
 /**
  * Settles a prompt against the record. A custom title this plugin did not set
- * means the person named the session, which ends the plugin's work on it.
+ * means the person named the session, which ends the plugin's work on it;
+ * otherwise a pending name is handed over for the prompt to apply.
  */
-export const onPrompt = (record: SessionRecord, sessionTitle: string | undefined): SessionRecord =>
-  !record.isUserNamed && sessionTitle !== undefined && sessionTitle !== record.applied
-    ? { ...record, isUserNamed: true }
-    : record
+export const onPrompt = (
+  record: SessionRecord,
+  sessionTitle: string | undefined,
+): PromptOutcome => {
+  if (record.isUserNamed) return { record }
+  if (sessionTitle !== undefined && sessionTitle !== record.applied) {
+    return { record: { ...record, isUserNamed: true, pending: undefined } }
+  }
+  if (record.pending === undefined || record.pending === sessionTitle) {
+    return { record: record.pending === undefined ? record : { ...record, pending: undefined } }
+  }
+  return {
+    record: { ...record, applied: record.pending, pending: undefined },
+    title: record.pending,
+  }
+}
 
 /**
  * The record after `/clear`: a fresh start, except that the title the session
@@ -237,7 +257,7 @@ export const onChecked = (
 ): SessionRecord => ({
   ...record,
   checkedAt: turns,
-  ...(name === null ? {} : { applied: name }),
+  pending: name !== null && name !== record.applied ? name : undefined,
   ...(color === undefined ? {} : { color }),
 })
 
@@ -269,4 +289,10 @@ export const onModelMissing = (
     : {
         warning: `tintname: model "${model}" not found; check its Configure options in /plugin`,
       }),
+})
+
+/** Notes a command run, so its transcript rows can be hidden; keeps the newest `MAX_RAN`. */
+export const onRan = (record: SessionRecord, run: string): SessionRecord => ({
+  ...record,
+  ran: [...(record.ran ?? []).filter((r) => r !== run), run].slice(-MAX_RAN),
 })

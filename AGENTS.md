@@ -13,8 +13,8 @@
 ## 2. Architecture
 
 - `plugin/hooks/title.ts`: the pure core. Building the title request, cleaning the reply, the check schedule and the per-session record transitions. No `claude-code` imports, so Vitest runs it without the engine.
-- `plugin/hooks/register.ts`: the thin shell. Three hooks (`turn.complete` schedules a check, `classic.UserPromptSubmit` applies a pending name through `sessionTitle`, `classic.SessionStart` resets on `/clear`) plus the `$.store` reads and writes and the shared color claims file under the config directory. Functions that take `$` must be declared at the top of the file, or `claude plugin validate` refuses the module.
-- Names are applied through `sessionTitle` at the next prompt, never by running `/rename`, which writes the command into the conversation the model reads. Colors have no such field, so they go through `$.command.run` with `/color`.
+- `plugin/hooks/register.ts`: the thin shell. Hooks: `turn.complete` schedules a check, `classic.UserPromptSubmit` names the first prompt before it is sent and applies a pending name through `sessionTitle`, `classic.SessionStart` resets on `/clear`, `ui.render` on `CommandOutput` hides the plugin's own `/color` output rows; plus the `$.store` reads and writes and the shared color claims file under the config directory. Functions that take `$` must be declared at the top of the file, or `claude plugin validate` refuses the module.
+- Names are applied through `sessionTitle` at the next prompt, never by running `/rename`, which writes the command into the conversation the model reads. Colors have no such field, so they go through `$.command.run` with `/color`; its echo row cannot be hidden by a plugin in this build (it is not raised through `ui.render`).
 - A session title the plugin did not set means the person named the session; the record is marked `isUserNamed` and the plugin stops for that session.
 
 ## 3. Naming and file conventions
