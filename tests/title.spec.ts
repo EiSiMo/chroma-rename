@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_TITLE_LENGTH,
+  COLORS,
+  MAX_NAME_LENGTH,
   buildTitlePrompt,
   cleanPrompt,
   isDue,
   isModelNotFound,
   onChecked,
   onModelMissing,
+  onClear,
   onPrompt,
-  sanitizeTitle,
+  parseReply,
+  pickColor,
+  freeColors,
+  sanitizeName,
   userPrompts,
   type Message,
 } from '../plugin/hooks/title.ts'
@@ -53,27 +58,39 @@ describe('userPrompts', () => {
 
 describe('buildTitlePrompt', () => {
   it('returns null before the person has typed anything', () => {
-    expect(buildTitlePrompt([assistant('hello')], undefined)).toBeNull()
+    expect(buildTitlePrompt([assistant('hello')], {}, COLORS)).toBeNull()
   })
 
-  it('carries the current title, the first prompt and the latest reply', () => {
+  it('carries the current name and color, the first prompt and the latest reply', () => {
     const prompt = buildTitlePrompt(
       [user('add a cache countdown'), assistant('Added it to the status line.')],
-      'Status line cache countdown',
+      { name: 'cache-countdown', color: 'cyan' },
+      COLORS,
     )
-    expect(prompt).toContain('Current title: Status line cache countdown')
+    expect(prompt).toContain('Current name: cache-countdown')
+    expect(prompt).toContain('Current color: cyan')
     expect(prompt).toContain('First prompt:\nadd a cache countdown')
     expect(prompt).toContain("Claude's latest reply:\nAdded it to the status line.")
     expect(prompt).not.toContain('Later prompts')
   })
 
-  it('says when there is no title yet', () => {
-    expect(buildTitlePrompt([user('hi there')], undefined)).toContain('Current title: (none)')
+  it('says when there is no name yet', () => {
+    expect(buildTitlePrompt([user('hi there')], {}, COLORS)).toContain('Current name: (none)')
+  })
+
+  it('offers only the free colors', () => {
+    const prompt = buildTitlePrompt([user('hi there')], {}, ['blue', 'pink']) ?? ''
+    expect(prompt).toContain('Pick one of: blue, pink.')
+  })
+
+  it('offers every color when none is free', () => {
+    const prompt = buildTitlePrompt([user('hi there')], {}, []) ?? ''
+    expect(prompt).toContain(`Pick one of: ${COLORS.join(', ')}.`)
   })
 
   it('keeps only the latest prompts and says how many it left out', () => {
     const messages = Array.from({ length: 12 }, (_, i) => user(`prompt ${i + 1}`))
-    const prompt = buildTitlePrompt(messages, undefined) ?? ''
+    const prompt = buildTitlePrompt(messages, {}, COLORS) ?? ''
     expect(prompt).toContain('Latest prompts, oldest first (3 earlier omitted):')
     expect(prompt).not.toContain('- prompt 4\n')
     expect(prompt).toContain('- prompt 5')
@@ -81,35 +98,70 @@ describe('buildTitlePrompt', () => {
   })
 
   it('clips long prompts', () => {
-    const prompt = buildTitlePrompt([user('x'.repeat(2000))], undefined) ?? ''
+    const prompt = buildTitlePrompt([user('x'.repeat(2000))], {}, COLORS) ?? ''
     expect(prompt).toContain(`${'x'.repeat(799)}…`)
     expect(prompt).not.toContain('x'.repeat(800))
   })
 })
 
-describe('sanitizeTitle', () => {
+describe('sanitizeName', () => {
   it.each([
-    ['"Fix login redirect loop."', 'Fix login redirect loop'],
-    ['Title: Status line cache countdown', 'Status line cache countdown'],
-    ['**Review PR 42**', 'Review PR 42'],
-    ['Toggle go-live — venue handover', 'Toggle go-live - venue handover'],
-    ['\n\n  Spaced   out   title  \nsecond line', 'Spaced out title'],
+    ['Rust Rewrite', 'rust-rewrite'],
+    ['name: login_redirect fix', 'login-redirect-fix'],
+    ['Karten-Export für Übersicht', 'karten-export-für'],
+    ['one two three four five', 'one-two-three'],
   ])('cleans %j', (raw, expected) => {
-    expect(sanitizeTitle(raw)).toBe(expected)
+    expect(sanitizeName(raw)).toBe(expected)
   })
 
-  it.each(['', '  \n ', '"."', 'ok'])('rejects %j', (raw) => {
-    expect(sanitizeTitle(raw)).toBeNull()
+  it.each(['', '  ', '"."', 'ok'])('rejects %j', (raw) => {
+    expect(sanitizeName(raw)).toBeNull()
   })
 
-  it('cuts a long title at a word', () => {
-    const title = sanitizeTitle(`${'word '.repeat(20)}end`) ?? ''
-    expect(title.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH)
-    expect(title.endsWith('word')).toBe(true)
+  it('cuts a long name at a word', () => {
+    const name = sanitizeName(`${'a'.repeat(20)} ${'b'.repeat(15)} ${'c'.repeat(10)}`) ?? ''
+    expect(name).toBe(`${'a'.repeat(20)}-${'b'.repeat(15)}`)
+    expect(name.length).toBeLessThanOrEqual(MAX_NAME_LENGTH)
+  })
+})
+
+describe('parseReply', () => {
+  it.each([
+    ['rust-rewrite orange', { kind: 'name', name: 'rust-rewrite', color: 'orange' }],
+    ['"weltkugel-feature blue."', { kind: 'name', name: 'weltkugel-feature', color: 'blue' }],
+    ['login-fix', { kind: 'name', name: 'login-fix' }],
+    ['KEEP', { kind: 'keep' }],
+    ['keep.', { kind: 'keep' }],
+  ])('reads %j', (raw, expected) => {
+    expect(parseReply(raw)).toEqual(expected)
   })
 
-  it('cuts a long unbroken title at the limit', () => {
-    expect(sanitizeTitle('y'.repeat(100))).toBe('y'.repeat(MAX_TITLE_LENGTH))
+  it.each(['', ' \n ', 'ok red'])('rejects %j', (raw) => {
+    expect(parseReply(raw)).toBeNull()
+  })
+})
+
+describe('pickColor', () => {
+  it('takes the wanted color when free', () => {
+    expect(pickColor('orange', 'blue', ['orange', 'blue'])).toBe('orange')
+  })
+
+  it('keeps the current color when the wanted one is taken', () => {
+    expect(pickColor('orange', 'blue', ['blue', 'pink'])).toBe('blue')
+  })
+
+  it('falls back to the first free color', () => {
+    expect(pickColor('orange', undefined, ['pink', 'cyan'])).toBe('pink')
+  })
+
+  it('shares the wanted color when none is free', () => {
+    expect(pickColor('orange', 'blue', [])).toBe('orange')
+  })
+})
+
+describe('freeColors', () => {
+  it('drops the taken colors', () => {
+    expect(freeColors(['red', 'cyan'])).toEqual(COLORS.filter((c) => c !== 'red' && c !== 'cyan'))
   })
 })
 
@@ -156,7 +208,7 @@ describe('onPrompt', () => {
 
   it('treats a title it did not set as the person naming the session', () => {
     expect(onPrompt({ applied: 'Mine', pending: 'Next' }, 'Theirs')).toEqual({
-      record: { isUserNamed: true },
+      record: { applied: 'Mine', isUserNamed: true },
     })
   })
 
@@ -172,7 +224,22 @@ describe('onPrompt', () => {
   })
 })
 
+describe('onClear', () => {
+  it('starts over and claims the title the session still shows', () => {
+    expect(onClear('old-name')).toEqual({ applied: 'old-name' })
+    expect(onClear(undefined)).toEqual({})
+  })
+})
+
 describe('onChecked', () => {
+  it('records the color it settled on', () => {
+    expect(onChecked({}, 1, 'rust-rewrite', 'orange')).toEqual({
+      checkedAt: 1,
+      pending: 'rust-rewrite',
+      color: 'orange',
+    })
+  })
+
   it('queues a new title', () => {
     expect(onChecked({ applied: 'Old' }, 4, 'New')).toEqual({
       applied: 'Old',
@@ -207,7 +274,7 @@ describe('onModelMissing', () => {
   it('warns with the model name and where to change it', () => {
     const { warning } = onModelMissing({}, 1, 'haikoo')
     expect(warning).toBe(
-      'session-titler: model "haikoo" not found; check its Configure options in /plugin',
+      'tintname: model "haikoo" not found; check its Configure options in /plugin',
     )
   })
 

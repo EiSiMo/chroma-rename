@@ -2,18 +2,25 @@ import type { EngineInterface, Register } from 'claude-code'
 import {
   SYSTEM_PROMPT,
   buildTitlePrompt,
+  freeColors,
   isDue,
   isModelNotFound,
   onChecked,
+  onClear,
   onModelMissing,
   onPrompt,
-  sanitizeTitle,
+  parseReply,
+  pickColor,
+  type Color,
   type SessionRecord,
 } from './title.ts'
 
 const KEY_PREFIX = 'session:'
 const MAX_SESSIONS = 300
 const TIMEOUT_MS = 30_000
+
+/** Which session holds which color, shared by every Claude Code process on the machine. */
+type Claims = Readonly<Record<string, Color>>
 
 const keyFor = (sessionId: string): string => `${KEY_PREFIX}${sessionId}`
 
@@ -33,10 +40,73 @@ const writeRecord = async (
   await Promise.all(sessions.slice(0, -MAX_SESSIONS).map((k) => $.store.delete(k)))
 }
 
+let configDir: string | undefined
+
+/** The Claude Code configuration directory, asked of the shell once per load. */
+const readConfigDir = async ($: EngineInterface): Promise<string> => {
+  if (configDir !== undefined) return configDir
+  const { stdout } = await $.process.run([
+    'sh',
+    '-c',
+    'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"',
+  ])
+  configDir = stdout
+  return configDir
+}
+
+/** The ids of the sessions running now, from the files Claude Code keeps per process. */
+const liveSessionIds = async ($: EngineInterface, dir: string): Promise<Set<string>> => {
+  const entries = await $.fs.list(`${dir}/sessions`).catch(() => [])
+  const ids = await Promise.all(
+    entries
+      .filter((f) => f.kind === 'file' && f.name.endsWith('.json'))
+      .map(async (f) => {
+        try {
+          const text = await $.fs.read(`${dir}/sessions/${f.name}`)
+          return (JSON.parse(text) as { sessionId?: unknown }).sessionId
+        } catch {
+          return undefined
+        }
+      }),
+  )
+  return new Set(ids.filter((id): id is string => typeof id === 'string'))
+}
+
+const claimsPath = (dir: string): string => `${dir}/tintname/colors.json`
+
+/** The claims of live sessions only; a session that ended or was cleared frees its color. */
+const readClaims = async ($: EngineInterface, dir: string): Promise<Claims> => {
+  const live = await liveSessionIds($, dir)
+  try {
+    const all = JSON.parse(await $.fs.read(claimsPath(dir))) as Claims
+    return Object.fromEntries(Object.entries(all).filter(([id]) => live.has(id)))
+  } catch {
+    return {}
+  }
+}
+
+const writeClaim = async (
+  $: EngineInterface,
+  sessionId: string,
+  color: Color | undefined,
+): Promise<void> => {
+  const dir = await readConfigDir($)
+  const others = Object.entries(await readClaims($, dir)).filter(([id]) => id !== sessionId)
+  const claims = Object.fromEntries(color === undefined ? others : [...others, [sessionId, color]])
+  await $.fs.write(claimsPath(dir), `${JSON.stringify(claims, null, 2)}\n`)
+}
+
+const takenByOthers = async ($: EngineInterface, sessionId: string): Promise<Color[]> => {
+  const claims = await readClaims($, await readConfigDir($))
+  return Object.entries(claims)
+    .filter(([id]) => id !== sessionId)
+    .map(([, color]) => color)
+}
+
 /**
- * Titles are computed after a turn, off the prompt's path, and applied at
- * the next prompt through `sessionTitle`, which adds nothing to the
- * conversation the model reads (running `/rename` would).
+ * Names are computed after a turn, off the prompt's path, and applied at the
+ * next prompt through `sessionTitle`. The color is set right away with
+ * `/color`, the only way a plugin reaches the prompt bar.
  */
 const check = async ($: EngineInterface, model: string): Promise<void> => {
   const sessionId = await $.session.id()
@@ -44,7 +114,9 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
   const turns = await $.session.turns()
   if (record.isUserNamed || !isDue(turns, record.checkedAt)) return
 
-  const prompt = buildTitlePrompt(await $.session.messages(), record.pending ?? record.applied)
+  const free = freeColors(await takenByOthers($, sessionId))
+  const current = { name: record.pending ?? record.applied, color: record.color }
+  const prompt = buildTitlePrompt(await $.session.messages(), current, free)
   if (prompt === null) return
 
   const reply = await $.model.complete({
@@ -55,14 +127,26 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
     timeoutMs: TIMEOUT_MS,
   })
   const latest = await readRecord($, sessionId)
-  if (!isModelNotFound(reply)) {
-    const title = reply.isAnswered ? sanitizeTitle(reply.text) : null
-    await writeRecord($, sessionId, onChecked(latest, turns, title))
+  if (isModelNotFound(reply)) {
+    const { record: checked, warning } = onModelMissing(latest, turns, model)
+    await writeRecord($, sessionId, checked)
+    if (warning !== undefined) $.ui.toast(warning)
     return
   }
-  const { record: checked, warning } = onModelMissing(latest, turns, model)
-  await writeRecord($, sessionId, checked)
-  if (warning !== undefined) $.ui.toast(warning)
+
+  const parsed = reply.isAnswered ? parseReply(reply.text) : null
+  if (parsed?.kind !== 'name') {
+    await writeRecord($, sessionId, onChecked(latest, turns, null))
+    if (latest.color !== undefined) await writeClaim($, sessionId, latest.color)
+    return
+  }
+
+  const color = pickColor(parsed.color, latest.color, freeColors(await takenByOthers($, sessionId)))
+  await writeClaim($, sessionId, color)
+  await writeRecord($, sessionId, onChecked(latest, turns, parsed.name, color))
+  if (color !== undefined && color !== latest.color) {
+    await $.command.run({ command: 'color', args: color })
+  }
 }
 
 export const register: Register = (on, options) => {
@@ -90,5 +174,18 @@ export const register: Register = (on, options) => {
     const { record: settled, title } = onPrompt(record, e.session_title)
     if (settled !== record) await writeRecord($, e.session_id, settled)
     return title === undefined ? result : { ...result, sessionTitle: title }
+  }).catch(($, e, next) => next(e))
+
+  on('classic.SessionStart', async ($, e, next) => {
+    const result = await next(e)
+    if (e.source !== 'clear') return result
+    await writeRecord($, e.session_id, onClear(e.session_title))
+    await writeClaim($, e.session_id, undefined)
+    $.clock.after(0, () => {
+      $.command
+        .run({ command: 'color', args: 'default' })
+        .catch((error: unknown) => $.ui.log(`color reset failed: ${String(error)}`))
+    })
+    return result
   }).catch(($, e, next) => next(e))
 }

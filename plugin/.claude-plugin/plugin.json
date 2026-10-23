@@ -1,17 +1,17 @@
 {
-  "name": "session-titler",
-  "version": "0.1.2",
-  "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves.",
-  "author": { "name": "Paul Chiu", "url": "https://github.com/paulchiu" },
-  "homepage": "https://github.com/paulchiu/claude-session-titler",
-  "repository": "https://github.com/paulchiu/claude-session-titler",
+  "name": "tintname",
+  "version": "0.1.0",
+  "description": "Names Claude Code sessions in short kebab-case, in the chat's language, and gives each open session its own prompt bar color.",
+  "author": { "name": "Moritz", "url": "https://github.com/EiSiMo" },
+  "homepage": "https://github.com/EiSiMo/tintname",
+  "repository": "https://github.com/EiSiMo/tintname",
   "license": "MIT",
-  "keywords": ["session", "title", "rename"],
+  "keywords": ["session", "title", "rename", "color"],
   "userConfig": {
     "model": {
       "type": "string",
       "title": "Model",
-      "description": "Model that writes the titles: an alias such as haiku or sonnet, or a full model id.",
+      "description": "Model that writes the names and picks the colors: an alias such as haiku or sonnet, or a full model id.",
       "default": "haiku"
     }
   }

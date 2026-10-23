@@ -1,15 +1,15 @@
 {
-  "name": "claude-session-titler",
+  "name": "tintname",
   "owner": {
-    "name": "Paul Chiu",
-    "url": "https://github.com/paulchiu"
+    "name": "Moritz",
+    "url": "https://github.com/EiSiMo"
   },
-  "description": "Session titler for Claude Code.",
+  "description": "tintname for Claude Code.",
   "plugins": [
     {
-      "name": "session-titler",
+      "name": "tintname",
       "source": "./plugin",
-      "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves."
+      "description": "Names Claude Code sessions in short kebab-case, in the chat's language, and gives each open session its own prompt bar color."
     }
   ]
 }

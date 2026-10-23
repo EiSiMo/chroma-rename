@@ -1,27 +1,43 @@
 /**
- * Pure core of the titler: what to ask the model, what to accept back, when to
- * ask, and how a session's record moves. No `claude-code` imports, so Vitest
- * runs it without the engine.
+ * Pure core of tintname: what to ask the model, what to accept back, when to
+ * ask, which color is free, and how a session's record moves. No `claude-code`
+ * imports, so Vitest runs it without the engine.
  */
 
 export type Message = { readonly role: 'user' | 'assistant'; readonly text: string }
 
-/** What the titler remembers about one session, kept in `$.store`. */
+/** The prompt bar colors `/color` takes. */
+export const COLORS = [
+  'red',
+  'blue',
+  'green',
+  'yellow',
+  'purple',
+  'orange',
+  'pink',
+  'cyan',
+] as const
+export type Color = (typeof COLORS)[number]
+
+/** What tintname remembers about one session, kept in `$.store`. */
 export type SessionRecord = {
-  /** The title this plugin last handed to Claude Code. */
+  /** The name this plugin last handed to Claude Code. */
   readonly applied?: string
-  /** A title computed after a turn, waiting for the next prompt to apply it. */
+  /** A name computed after a turn, waiting for the next prompt to apply it. */
   readonly pending?: string
+  /** The color this plugin last set with `/color`. */
+  readonly color?: Color
   /** The prompt count at the last check. */
   readonly checkedAt?: number
-  /** Set once the person names the session themselves; the titler then stays out. */
+  /** Set once the person names the session themselves; the plugin then stays out. */
   readonly isUserNamed?: boolean
   /** Set once the person has been told the configured model was not found. */
   readonly isModelWarned?: boolean
 }
 
 export const MAX_GAP = 8
-export const MAX_TITLE_LENGTH = 60
+export const MAX_WORDS = 3
+export const MAX_NAME_LENGTH = 40
 
 const FIRST_PROMPT_CHARS = 800
 const LATER_PROMPT_CHARS = 300
@@ -35,7 +51,7 @@ const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
 const TAG = /<\/?[a-z][a-z0-9-]*>/gi
 
 export const SYSTEM_PROMPT =
-  'You title Claude Code sessions so the person can find them again in a session list. Reply with the title only.'
+  'You name Claude Code sessions and pick a color for each, so the person can tell their open sessions apart. Reply with one line only.'
 
 /**
  * Turns a user row into the words the person typed: engine reminders and
@@ -64,14 +80,18 @@ export const userPrompts = (messages: readonly Message[]): string[] =>
 const lastReply = (messages: readonly Message[]): string =>
   [...messages].reverse().find((m) => m.role === 'assistant' && m.text.trim() !== '')?.text ?? ''
 
+export type Current = { readonly name?: string; readonly color?: Color }
+
 /**
- * The request for a title: the rules, the current title, the opening prompt,
- * the most recent prompts and Claude's latest reply. Returns `null` when the
- * session holds no prompt worth titling yet.
+ * The request for a name and color: the rules, the current name and color,
+ * the colors still free, the opening prompt, the most recent prompts and
+ * Claude's latest reply. Returns `null` when the session holds no prompt
+ * worth naming yet.
  */
 export const buildTitlePrompt = (
   messages: readonly Message[],
-  currentTitle: string | undefined,
+  current: Current,
+  free: readonly Color[],
 ): string | null => {
   const [first, ...rest] = userPrompts(messages)
   if (first === undefined) return null
@@ -79,17 +99,26 @@ export const buildTitlePrompt = (
   const later = rest.slice(-LATER_PROMPTS)
   const omitted = rest.length - later.length
   const reply = lastReply(messages)
+  const choices = free.length > 0 ? free : COLORS
 
   return [
-    'Rules:',
-    '- 3 to 7 words, sentence case, no quotes, no trailing punctuation, no em dashes.',
-    '- Name the main piece of work: its subject and what is being done to it, for example "Status line prompt cache countdown" or "Fix Toggle burn retry on timeout".',
-    '- Describe the whole session, not only the latest prompt. Side questions and follow-ups do not change the topic.',
-    '- Keep identifiers that anchor the work: ticket keys, PR numbers, package names.',
-    '- Leave out the project or repository name unless it is the subject; the session list already shows it.',
-    '- If the current title still fits, reply with it unchanged. Change it only when the main work has clearly moved on.',
+    'Reply with exactly one line: "<name> <color>", or "KEEP" to keep the current name and color.',
     '',
-    `Current title: ${currentTitle ?? '(none)'}`,
+    'Name rules:',
+    `- 1 to ${MAX_WORDS} words in kebab-case, all lowercase, for example "rust-rewrite" or "login-redirect-fix".`,
+    '- Write it in the language the person writes in: a German conversation gets a German name such as "karten-export".',
+    '- Name the main piece of work, not the latest prompt. Side questions and follow-ups do not change the topic.',
+    '- Leave out the project or repository name unless it is the subject.',
+    '',
+    'Color rules:',
+    `- Pick one of: ${choices.join(', ')}.`,
+    '- Pick the color that fits the subject best: rust or fire is orange, a globe, sky or water is blue, plants or growth is green, errors or deletion is red, docs or writing is yellow.',
+    '',
+    'When to keep:',
+    '- If there is a current name, reply "KEEP" unless the session has clearly switched to a different topic. A refinement, a next step or a detail of the same work is not a switch. When in doubt, KEEP.',
+    '',
+    `Current name: ${current.name ?? '(none)'}`,
+    `Current color: ${current.color ?? '(none)'}`,
     '',
     'First prompt:',
     clip(first, FIRST_PROMPT_CHARS),
@@ -106,36 +135,69 @@ export const buildTitlePrompt = (
   ].join('\n')
 }
 
+const isColor = (word: string): word is Color => (COLORS as readonly string[]).includes(word)
+
 /**
- * Reduces a model reply to a usable title, or `null` when nothing usable is
- * left. Em and en dashes become hyphens; a long title is cut at a word.
+ * Reduces a name to lowercase kebab-case of at most `MAX_WORDS` words, letters
+ * of any script kept, or `null` when nothing usable is left.
  */
-export const sanitizeTitle = (raw: string): string | null => {
+export const sanitizeName = (raw: string): string | null => {
+  const words = raw
+    .toLowerCase()
+    .replace(/^name\s*:\s*/, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w !== '')
+    .slice(0, MAX_WORDS)
+  let name = words.join('-')
+  while (name.length > MAX_NAME_LENGTH && name.includes('-')) {
+    name = name.slice(0, name.lastIndexOf('-'))
+  }
+  name = name.slice(0, MAX_NAME_LENGTH)
+  return name.length < 3 ? null : name
+}
+
+export type Reply =
+  | { readonly kind: 'keep' }
+  | { readonly kind: 'name'; readonly name: string; readonly color?: Color }
+
+/** Reads the model's line: `KEEP`, or a name followed by a color, or `null`. */
+export const parseReply = (raw: string): Reply | null => {
   const line = raw
     .split('\n')
-    .map((l) => l.trim())
+    .map((l) => l.trim().replace(/^["'`*_]+|["'`*_.]+$/g, ''))
     .find((l) => l !== '')
   if (line === undefined) return null
+  if (/^keep\b/i.test(line)) return { kind: 'keep' }
 
-  const title = line
-    .replace(/^title\s*:\s*/i, '')
-    .replace(/^["'`*_]+|["'`*_]+$/g, '')
-    .replace(/\s*[–—]\s*/g, ' - ')
-    .replace(/[.!?;:,]+$/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (title.length < 3) return null
-  if (title.length <= MAX_TITLE_LENGTH) return title
+  const words = line.split(/\s+/)
+  const last = words.at(-1)?.toLowerCase() ?? ''
+  const color = isColor(last) ? last : undefined
+  const name = sanitizeName((color === undefined ? words : words.slice(0, -1)).join(' '))
+  if (name === null) return null
+  return color === undefined ? { kind: 'name', name } : { kind: 'name', name, color }
+}
 
-  const cut = title.slice(0, MAX_TITLE_LENGTH + 1)
-  const lastSpace = cut.lastIndexOf(' ')
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut.slice(0, MAX_TITLE_LENGTH)).trim()
+/** The colors no other live session holds, in `COLORS` order. */
+export const freeColors = (taken: readonly Color[]): Color[] =>
+  COLORS.filter((c) => !taken.includes(c))
+
+/**
+ * The color to show: the wanted one if free, else the current one if free,
+ * else the first free one. With every color taken, the wanted one is shared.
+ */
+export const pickColor = (
+  wanted: Color | undefined,
+  current: Color | undefined,
+  free: readonly Color[],
+): Color | undefined => {
+  if (wanted !== undefined && free.includes(wanted)) return wanted
+  if (current !== undefined && free.includes(current)) return current
+  return free[0] ?? wanted ?? current
 }
 
 /**
  * Whether a check is due after `turns` prompts. The first prompt is checked,
- * then the gap doubles (1, 2, 4, 8, 16, ...) up to `MAX_GAP`, so a young
- * session settles quickly and a long one is re-read every few prompts.
+ * then the gap doubles (1, 2, 4, 8, 16, ...) up to `MAX_GAP`.
  */
 export const isDue = (turns: number, checkedAt: number | undefined): boolean =>
   turns >= 1 && (checkedAt === undefined || turns - checkedAt >= Math.min(checkedAt, MAX_GAP))
@@ -144,8 +206,8 @@ export type PromptOutcome = { readonly record: SessionRecord; readonly title?: s
 
 /**
  * Settles a prompt against the record. A custom title this plugin did not set
- * means the person named the session, which ends the titler's work on it;
- * otherwise a pending title is handed over for the prompt to apply.
+ * means the person named the session, which ends the plugin's work on it;
+ * otherwise a pending name is handed over for the prompt to apply.
  */
 export const onPrompt = (
   record: SessionRecord,
@@ -153,7 +215,7 @@ export const onPrompt = (
 ): PromptOutcome => {
   if (record.isUserNamed) return { record }
   if (sessionTitle !== undefined && sessionTitle !== record.applied) {
-    return { record: { isUserNamed: true } }
+    return { record: { ...record, isUserNamed: true, pending: undefined } }
   }
   if (record.pending === undefined || record.pending === sessionTitle) {
     return { record: { ...record, pending: undefined } }
@@ -164,15 +226,24 @@ export const onPrompt = (
   }
 }
 
-/** Records a finished check at `turns` prompts and the title it produced, if any. */
+/**
+ * The record after `/clear`: a fresh start, except that the title the session
+ * still shows counts as the plugin's, so the next name replaces it.
+ */
+export const onClear = (sessionTitle: string | undefined): SessionRecord =>
+  sessionTitle === undefined ? {} : { applied: sessionTitle }
+
+/** Records a finished check at `turns` prompts, with the name and color it settled on. */
 export const onChecked = (
   record: SessionRecord,
   turns: number,
-  title: string | null,
+  name: string | null,
+  color?: Color,
 ): SessionRecord => ({
   ...record,
   checkedAt: turns,
-  pending: title !== null && title !== record.applied ? title : undefined,
+  pending: name !== null && name !== record.applied ? name : undefined,
+  ...(color === undefined ? {} : { color }),
 })
 
 /** The parts of a model reply that say why it failed, if it did. */
@@ -201,6 +272,6 @@ export const onModelMissing = (
   ...(record.isModelWarned
     ? {}
     : {
-        warning: `session-titler: model "${model}" not found; check its Configure options in /plugin`,
+        warning: `tintname: model "${model}" not found; check its Configure options in /plugin`,
       }),
 })

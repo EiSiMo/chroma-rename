@@ -1,6 +1,6 @@
-# Contributing to Session titler
+# Contributing to tintname
 
-Bug reports, ideas and pull requests are welcome. The issue tracker is at [github.com/paulchiu/claude-session-titler/issues](https://github.com/paulchiu/claude-session-titler/issues).
+Bug reports, ideas and pull requests are welcome. The issue tracker is at [github.com/EiSiMo/tintname/issues](https://github.com/EiSiMo/tintname/issues).
 
 ## Reporting bugs
 

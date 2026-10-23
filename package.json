@@ -1,8 +1,8 @@
 {
-  "name": "claude-session-titler",
-  "version": "0.1.2",
+  "name": "tintname",
+  "version": "0.1.0",
   "private": true,
-  "description": "Names Claude Code sessions after their main piece of work, and keeps the name current as the work moves.",
+  "description": "Names Claude Code sessions in short kebab-case and gives each open session its own color.",
   "type": "module",
   "engines": {
     "node": ">=24"

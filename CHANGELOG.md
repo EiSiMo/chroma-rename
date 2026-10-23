@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Each session gets a prompt bar color picked by the model to fit its subject, coordinated across open sessions so no two share one.
+- `/clear` resets the name and color.
+
 ### Changed
+
+- Forked from session-titler and renamed to tintname.
+- Names are 1 to 3 words of lowercase kebab-case, in the chat's language.
+- Renames only on a clear topic switch; the model answers `KEEP` otherwise.
 
 ### Fixed
 

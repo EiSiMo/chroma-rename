@@ -1,59 +1,49 @@
-# Session Titler
+# tintname
 
-Session titler is a Claude Code plugin that names each session after its main piece of work, and renames it when the work changes.
+tintname is a Claude Code plugin that gives every session a short kebab-case name and its own prompt bar color, so a handful of open sessions stay easy to tell apart.
 
-Claude Code's own titles tend to describe the last thing I typed, so `/resume` turned into a list of follow-up questions. Session titler reads the whole conversation instead. It keeps the current title while it still fits, and only changes it when the session has clearly moved on to something else.
+It started as a fork of [paulchiu/claude-session-titler](https://github.com/paulchiu/claude-session-titler) and keeps its scheduling and hooks, with these changes:
+
+- Names are 1 to 3 words of lowercase kebab-case (`rust-rewrite`, `karten-export`), in the language the chat is in.
+- The model also picks a color that fits the subject: a Rust rewrite is orange, a globe feature is blue.
+- Open sessions share their colors through one file, so no two live sessions get the same one. When all 8 are taken, the wanted color is shared.
+- Renaming is conservative: the model answers `KEEP` unless the session has clearly switched topics.
+- `/clear` starts over: the color resets to default, the color claim is released, and the next prompt names the session afresh.
 
 ## Install
 
-In a Claude Code terminal session (v2.1.275 or later):
-
 ```text
-/plugin install session-titler --marketplace paulchiu/claude-session-titler
+/plugin install tintname --marketplace EiSiMo/tintname
 ```
 
-Answer `y` to add the marketplace, then pick the user scope so it runs in every project.
-
-### Auto-update
-
-Claude Code leaves auto-update off for third-party marketplaces. To pick up new releases automatically, run `/plugin`, open the Marketplaces tab, select `claude-session-titler` and choose "Enable auto-update". Each release bumps the version in `plugin/.claude-plugin/plugin.json`, which is what Claude Code compares when it updates.
-
-To update by hand:
-
-```bash
-claude plugin update session-titler@claude-session-titler
-```
+Pick the user scope so it runs in every project. Turn off `session-titler` if you had it, or both will name your sessions.
 
 ## How it works
 
-When Claude finishes replying, the plugin checks whether the title is due a review. It checks after the first prompt, then after prompts 2, 4, 8 and 16, then every 8 prompts. A new session gets a name quickly, and a long one is re-read every so often.
+When Claude finishes replying, the plugin checks whether the name is due a review: after the first prompt, then after prompts 2, 4, 8 and 16, then every 8 prompts.
 
-Each check sends the model the current title, your first prompt, your 8 most recent prompts and Claude's latest reply, with system reminders and command output stripped. The model is asked for a 3 to 7 word title naming the subject and what is being done to it, and to return the current title unchanged unless the main work has moved on.
+Each check sends the model (Haiku by default) the current name and color, the colors still free, your first prompt, your 8 most recent prompts and Claude's latest reply. It answers with one line, `<name> <color>` or `KEEP`.
 
-The new title is applied when you send your next prompt, through the prompt hook's `sessionTitle` field. Running `/rename` would apply it straight away, but it would also add the command and its output to the conversation Claude reads.
+The name is applied at your next prompt through the prompt hook's `sessionTitle` field, which adds nothing to the conversation. The color is set right away by running `/color <color>`, the only way a plugin can reach the prompt bar; that command's short output line does land in the transcript.
 
-The plugin hooks two events. When a turn completes, it may schedule a check; when you submit a prompt, it may set the session title. It doesn't change your prompt, Claude's replies or anything else in the conversation.
+Colors are coordinated through `~/.claude/tintname/colors.json` (session id to color). A claim counts only while its session is listed in `~/.claude/sessions/`, so ended or cleared sessions free their color by themselves.
 
 ### Naming a session yourself
 
-If you name a session with `/rename` or `claude --name`, the plugin sees a title it didn't set and stops titling that session.
+If you name a session with `/rename` or `claude --name`, the plugin sees a title it didn't set and stops for that session.
 
 ## Settings
 
 | Option  | Default | What it does                                                                       |
 | ------- | ------- | ---------------------------------------------------------------------------------- |
-| `model` | `haiku` | Model that writes the titles: an alias such as `haiku` or `sonnet`, or a model id. |
-
-Change it from `/plugin`: open Installed, select `session-titler`, then "Configure options". Use an alias or a model id, not the display name (`haiku`, not `Haiku 5.5`). If Claude Code can't find the model, the plugin shows a toast once per session and the session stays untitled.
-
-Each check is one small request: a few thousand input tokens and a few output tokens. With the default model and the schedule above, a 40-prompt session makes 8 checks.
+| `model` | `haiku` | Model that writes names and picks colors: an alias such as `haiku`, or a model id. |
 
 ## Limitations
 
-- The title shows up one prompt late, since it's applied at your next prompt.
-- A one-shot `claude -p` run ends before a next prompt, so it never gets a title.
-- A forked session carries over its parent's title, which the plugin reads as a name you chose, so it leaves forks alone.
-- It uses Claude Code's plugin hooks API, which is in early access and may change between releases. CI runs the plugin's checks against the latest Claude Code to catch breaking changes.
+- The name shows up one prompt late, since it's applied at your next prompt.
+- Two sessions checking in the same instant can pick the same color; the next rename sorts it out.
+- A color you set by hand with `/color` is not known to other sessions.
+- It uses Claude Code's plugin hooks API, which is in early access and may change between releases.
 
 ## Development
 
@@ -69,7 +59,7 @@ npm run check
 To try a working copy without installing it:
 
 ```bash
-claude --plugin-dir ~/path/to/claude-session-titler/plugin
+claude --plugin-dir ~/path/to/claude-tintname/plugin
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the release process.
