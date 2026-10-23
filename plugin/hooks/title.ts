@@ -294,6 +294,42 @@ export const availableColors = (claims: readonly Claim[], now: number): Color[] 
   return idle.filter((c, i) => idle.indexOf(c) === i)
 }
 
+/** Who holds one color, kept in that color's file: session id to when it took the color. */
+export type Holders = Readonly<Record<string, number>>
+
+export const MAX_HOLDERS = 16
+
+/**
+ * One color's holders after the session takes it (`isHolding`) or lets it go:
+ * sessions `isLive` rejects dropped, the newest `MAX_HOLDERS` kept.
+ */
+export const withHolder = (
+  holders: Holders,
+  sessionId: string,
+  isHolding: boolean,
+  now: number,
+  isLive: (id: string) => boolean,
+): Holders => {
+  const others = Object.entries(holders).filter(
+    ([id, at]) => id !== sessionId && typeof at === 'number' && isLive(id),
+  )
+  const kept = isHolding ? [...others, [sessionId, holders[sessionId] ?? now] as const] : others
+  return Object.fromEntries([...kept].sort((a, b) => a[1] - b[1]).slice(-MAX_HOLDERS))
+}
+
+/** The claims of every live session but `sessionId`, read from each color's holders. */
+export const claimsOf = (
+  board: Readonly<Partial<Record<Color, Holders>>>,
+  sessionId: string,
+  live: (id: string) => { readonly idleSince?: number } | undefined,
+): Claim[] =>
+  COLORS.flatMap((color) =>
+    Object.keys(board[color] ?? {}).flatMap((id) => {
+      const session = id === sessionId ? undefined : live(id)
+      return session === undefined ? [] : [{ color, ...session }]
+    }),
+  )
+
 /**
  * The color to show: once set it stays, until `/clear`. A new session gets
  * the wanted color if free, else the first free one; with every color taken,

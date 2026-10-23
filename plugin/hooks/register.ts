@@ -8,8 +8,11 @@ import {
   colorRowIn,
   isColor,
   onUserColor,
+  COLORS,
   availableColors,
-  type Claim,
+  claimsOf,
+  withHolder,
+  type Holders,
   isDue,
   isModelNotFound,
   onChecked,
@@ -30,9 +33,6 @@ const KEY_PREFIX = 'session:'
 const MAX_SESSIONS = 300
 const TIMEOUT_MS = 30_000
 const FIRST_TIMEOUT_MS = 6_000
-
-/** Which session holds which color, shared by every Claude Code process on the machine. */
-type Claims = Readonly<Record<string, Color>>
 
 const keyFor = (sessionId: string): string => `${KEY_PREFIX}${sessionId}`
 
@@ -62,23 +62,39 @@ const writeRecord = async (
 
 let configDir: string | undefined
 
-/** The Claude Code configuration directory, asked of the shell once per load. */
+/**
+ * The Claude Code configuration directory, read from the environment once per
+ * load: `CLAUDE_CONFIG_DIR`, else `.claude` in the home directory, which
+ * Windows keeps in `USERPROFILE`. No command runs, so no shell is needed.
+ */
 const readConfigDir = async ($: EngineInterface): Promise<string> => {
   if (configDir !== undefined) return configDir
-  const { stdout } = await $.process.run([
-    'sh',
-    '-c',
-    'printf %s "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"',
-  ])
-  configDir = stdout
+  const own = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home =
+    (await $.env.get('OS')) === 'Windows_NT'
+      ? await $.env.get('USERPROFILE')
+      : await $.env.get('HOME')
+  if (own === undefined || own === '') {
+    if (home === undefined || home === '') throw new Error('no home directory')
+    configDir = `${home.replace(/[\\/]+$/, '')}/.claude`
+  } else {
+    configDir = own
+  }
   return configDir
 }
 
 type LiveSession = { readonly idleSince?: number }
 
-/** The sessions running now, by id, from the files Claude Code keeps per process. */
-const liveSessions = async ($: EngineInterface, dir: string): Promise<Map<string, LiveSession>> => {
-  const entries = await $.fs.list(`${dir}/sessions`).catch(() => [])
+/**
+ * The sessions running now, by id, from the files Claude Code keeps per
+ * process; `undefined` when there are none to read, so no claim is dropped.
+ */
+const liveSessions = async (
+  $: EngineInterface,
+  dir: string,
+): Promise<Map<string, LiveSession> | undefined> => {
+  const entries = await $.fs.list(`${dir}/sessions`).catch(() => undefined)
+  if (entries === undefined) return undefined
   const sessions = await Promise.all(
     entries
       .filter((f) => f.kind === 'file' && f.name.endsWith('.json'))
@@ -111,89 +127,100 @@ const liveSessions = async ($: EngineInterface, dir: string): Promise<Map<string
   )
 }
 
-const claimsPath = (dir: string): string => `${dir}/tintname/colors.json`
-const lockPath = (dir: string): string => `${dir}/tintname/colors.lock`
+const holdersPath = (dir: string, color: Color): string => `${dir}/tintname/colors/${color}.json`
 
-const LOCK_WAIT_MS = 3_000
-const LOCK_STALE_MS = 10_000
-
-const sleep = ($: EngineInterface, ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    $.clock.after(ms, resolve)
-  })
-
-/**
- * Runs `fn` holding the claims lock, a directory only one `mkdir` can create.
- * A lock older than `LOCK_STALE_MS` was left by a crash and is broken; after
- * `LOCK_WAIT_MS` `fn` runs anyway, a rare doubled color being better than none.
- */
-const withLock = async <T>($: EngineInterface, fn: () => Promise<T>): Promise<T> => {
-  const dir = await readConfigDir($)
-  const lock = lockPath(dir)
-  await $.process.run(['mkdir', '-p', `${dir}/tintname`])
-  let isHeld = false
-  for (let waited = 0; waited < LOCK_WAIT_MS && !isHeld; waited += 50) {
-    isHeld = (await $.process.run(['mkdir', lock])).exitCode === 0
-    if (isHeld) break
-    const age = await $.fs
-      .stat(lock)
-      .then((st) => Date.now() - st.mtimeMs)
-      .catch(() => 0)
-    if (age > LOCK_STALE_MS) await $.process.run(['rmdir', lock])
-    else await sleep($, 50)
+/** One color's holders; a file caught mid-write is read again, a missing one holds nobody. */
+const readHolders = async ($: EngineInterface, dir: string, color: Color): Promise<Holders> => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const text = await $.fs.read(holdersPath(dir, color)).catch(() => undefined)
+    if (text === undefined) return {}
+    try {
+      return JSON.parse(text) as Holders
+    } catch {
+      await $.clock.sleep(20)
+    }
   }
-  try {
-    return await fn()
-  } finally {
-    if (isHeld) await $.process.run(['rmdir', lock])
-  }
+  return {}
 }
 
-/** The claims of live sessions only; a session that ended or was cleared frees its color. */
-const readClaims = async (
-  $: EngineInterface,
-  dir: string,
-): Promise<{ readonly claims: Claims; readonly live: Map<string, LiveSession> }> => {
+type Board = {
+  readonly holders: Readonly<Record<Color, Holders>>
+  readonly live?: Map<string, LiveSession>
+}
+
+const readBoard = async ($: EngineInterface, dir: string): Promise<Board> => {
   const live = await liveSessions($, dir)
-  try {
-    const all = JSON.parse(await $.fs.read(claimsPath(dir))) as Claims
-    return { claims: Object.fromEntries(Object.entries(all).filter(([id]) => live.has(id))), live }
-  } catch {
-    return { claims: {}, live }
+  const holders = await Promise.all(COLORS.map((color) => readHolders($, dir, color)))
+  const board = Object.fromEntries(COLORS.map((color, i) => [color, holders[i] ?? {}]))
+  return {
+    holders: board as Record<Color, Holders>,
+    ...(live === undefined ? {} : { live }),
   }
 }
+
+const isLiveIn =
+  (board: Board) =>
+  (id: string): boolean =>
+    board.live === undefined || board.live.has(id)
 
 /** The colors this session may take now, given every other live session's claim. */
-const colorsFor = (claims: Claims, live: Map<string, LiveSession>, sessionId: string): Color[] => {
-  const others: Claim[] = Object.entries(claims)
-    .filter(([id]) => id !== sessionId)
-    .map(([id, color]) => ({ color, ...live.get(id) }))
-  return availableColors(others, Date.now())
-}
+const colorsFor = (board: Board, sessionId: string): Color[] =>
+  availableColors(
+    claimsOf(board.holders, sessionId, (id) =>
+      isLiveIn(board)(id) ? (board.live?.get(id) ?? {}) : undefined,
+    ),
+    Date.now(),
+  )
+
+const VERIFY_MS = 150
+const CLAIM_ATTEMPTS = 4
 
 /**
- * Claims a color for the session under the lock: `choose` gets the colors it
- * may take and returns its pick, or `undefined` to release its claim.
+ * Claims a color for the session: `choose` gets the colors it may take and
+ * returns its pick, or `undefined` to release its claim. Each color has a file
+ * of its own; the session writes itself in, waits `VERIFY_MS` and reads it
+ * back, and picks again when a session writing at the same time took its
+ * place. Without a lock or a command, this runs the same on every system.
+ * When the files cannot be used, the color is still picked, only unshared.
  */
-const claim = (
+const claim = async (
   $: EngineInterface,
   sessionId: string,
   choose: (available: Color[]) => Color | undefined,
-): Promise<Color | undefined> =>
-  withLock($, async () => {
+): Promise<Color | undefined> => {
+  try {
     const dir = await readConfigDir($)
-    const { claims, live } = await readClaims($, dir)
-    const color = choose(colorsFor(claims, live, sessionId))
-    const others = Object.entries(claims).filter(([id]) => id !== sessionId)
-    const next = Object.fromEntries(color === undefined ? others : [...others, [sessionId, color]])
-    await $.fs.write(claimsPath(dir), `${JSON.stringify(next, null, 2)}\n`)
+    let color: Color | undefined
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
+      const board = await readBoard($, dir)
+      color = choose(colorsFor(board, sessionId))
+      const now = Date.now()
+      await Promise.all(
+        COLORS.filter((c) => c === color || sessionId in board.holders[c]).map((c) =>
+          $.fs.write(
+            holdersPath(dir, c),
+            `${JSON.stringify(withHolder(board.holders[c], sessionId, c === color, now, isLiveIn(board)), null, 2)}\n`,
+          ),
+        ),
+      )
+      if (color === undefined) return undefined
+      await $.clock.sleep(VERIFY_MS)
+      if (sessionId in (await readHolders($, dir, color))) return color
+    }
     return color
-  })
+  } catch (error) {
+    $.ui.log(`color claim failed: ${String(error)}`)
+    return choose([...COLORS])
+  }
+}
 
-/** The colors this session may take now, for the prompt; read without the lock. */
+/** The colors this session may take now, for the prompt. */
 const availableFor = async ($: EngineInterface, sessionId: string): Promise<Color[]> => {
-  const { claims, live } = await readClaims($, await readConfigDir($))
-  return colorsFor(claims, live, sessionId)
+  try {
+    return colorsFor(await readBoard($, await readConfigDir($)), sessionId)
+  } catch {
+    return [...COLORS]
+  }
 }
 
 type Consulted = { readonly record: SessionRecord; readonly newColor?: Color }
