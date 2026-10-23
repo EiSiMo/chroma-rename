@@ -26,6 +26,8 @@ import {
   onRan,
   parseReply,
   pickColor,
+  recentOf,
+  appendLog,
   type Color,
   type Message,
   type SessionRecord,
@@ -41,11 +43,14 @@ const keyFor = (sessionId: string): string => `${KEY_PREFIX}${sessionId}`
 const readRecord = async ($: EngineInterface, sessionId: string): Promise<SessionRecord> =>
   ((await $.store.get(keyFor(sessionId))) as SessionRecord | undefined) ?? {}
 
-/** Every session's record, oldest first. */
-const readRecords = async ($: EngineInterface): Promise<SessionRecord[]> => {
+/** Every session's record by id, least recently written first. */
+const readRecords = async ($: EngineInterface): Promise<[string, SessionRecord][]> => {
   const keys = (await $.store.keys()).filter((k) => k.startsWith(KEY_PREFIX))
   return Promise.all(
-    keys.map(async (k) => ((await $.store.get(k)) as SessionRecord | undefined) ?? {}),
+    keys.map(async (k): Promise<[string, SessionRecord]> => [
+      k.slice(KEY_PREFIX.length),
+      ((await $.store.get(k)) as SessionRecord | undefined) ?? {},
+    ]),
   )
 }
 
@@ -83,6 +88,27 @@ const readConfigDir = async ($: EngineInterface): Promise<string> => {
     configDir = own
   }
   return configDir
+}
+
+const MAX_LOG_CHARS = 256 * 1024
+let logged: Promise<void> = Promise.resolve()
+
+/**
+ * Adds a line to `tintname/tintname.log` under the config directory, the
+ * oldest lines dropped past `MAX_LOG_CHARS`. Lines of one session are written
+ * in turn; a failed write is lost, never raised.
+ */
+const log = ($: EngineInterface, sessionId: string, text: string): void => {
+  const line = `${new Date().toISOString()} ${sessionId.slice(0, 8)} ${text}`
+  logged = logged.then(async () => {
+    try {
+      const path = `${await readConfigDir($)}/tintname/tintname.log`
+      const old = await $.fs.read(path).catch(() => '')
+      await $.fs.write(path, appendLog(old, line, MAX_LOG_CHARS))
+    } catch {
+      // the log is best effort
+    }
+  })
 }
 
 type LiveSession = { readonly idleSince?: number }
@@ -197,20 +223,13 @@ const claim = async (
       if (color === undefined) return undefined
       await $.clock.sleep(VERIFY_MS)
       if (sessionId in (await readHolders($, dir, color))) return color
+      log($, sessionId, `claim: lost ${color} to another session, picking again`)
     }
     return color
   } catch (error) {
     $.ui.log(`color claim failed: ${String(error)}`)
+    log($, sessionId, `claim failed: ${String(error)}`)
     return choose([...COLORS])
-  }
-}
-
-/** The colors this session may take now, for the prompt. */
-const availableFor = async ($: EngineInterface, sessionId: string): Promise<Color[]> => {
-  try {
-    return colorsFor(await readBoard($, await readConfigDir($)), sessionId)
-  } catch {
-    return [...COLORS]
   }
 }
 
@@ -232,14 +251,24 @@ const consult = async (
   isFresh = false,
 ): Promise<Consulted | undefined> => {
   const record = await readRecord($, sessionId)
-  const free = await availableFor($, sessionId)
+  const board = await readConfigDir($)
+    .then((dir) => readBoard($, dir))
+    .catch(() => undefined)
+  const free = board === undefined ? [...COLORS] : colorsFor(board, sessionId)
+  const recent = recentOf(
+    await readRecords($),
+    sessionId,
+    (id) => board?.live?.has(id) ?? false,
+    record.applied,
+  )
   const isColorFixed = record.isColorUserSet === true
   const current = isFresh
     ? { color: record.color, isColorFixed }
     : { name: record.pending ?? record.applied, color: record.color, isColorFixed }
-  const prompt = buildTitlePrompt(messages, current, free, style)
+  const prompt = buildTitlePrompt(messages, current, free, style, recent)
   if (prompt === null) return undefined
 
+  const startedAt = Date.now()
   const reply = await $.model.complete({
     model,
     system: SYSTEM_PROMPT,
@@ -247,6 +276,14 @@ const consult = async (
     maxTokens: 40,
     timeoutMs,
   })
+  const answer = reply.isAnswered
+    ? JSON.stringify(reply.text)
+    : `no answer (${reply.reason}${'error' in reply ? ` ${String(reply.error)}` : ''})`
+  log(
+    $,
+    sessionId,
+    `ask ${model} at turn ${turns} in ${Date.now() - startedAt} ms, ${recent.length} earlier, free ${free.join(',')}: ${answer}`,
+  )
   const latest = await readRecord($, sessionId)
   if (isModelNotFound(reply)) {
     const { record: checked, warning } = onModelMissing(latest, turns, model)
@@ -256,6 +293,7 @@ const consult = async (
   }
 
   const parsed = reply.isAnswered ? parseReply(reply.text, style) : null
+  if (reply.isAnswered && parsed === null) log($, sessionId, 'reply not usable')
   if (parsed?.kind !== 'name') {
     const checked = onChecked(latest, turns, null)
     await writeRecord($, sessionId, checked)
@@ -272,15 +310,24 @@ const consult = async (
   const named = onChecked(settled, turns, parsed.name, color)
   const checked = newColor === undefined ? named : onRan(named, `color ${newColor}`)
   await writeRecord($, sessionId, checked)
+  const reused = recent.find((r) => r.name === parsed.name)
+  log(
+    $,
+    sessionId,
+    `name ${parsed.name}${checked.pending === undefined ? ' (unchanged)' : ''}, color ${color ?? 'none'}${
+      parsed.color !== undefined && parsed.color !== color ? ` (asked ${parsed.color})` : ''
+    }${reused === undefined ? '' : `, reused from an earlier session (${reused.color ?? 'no color'})`}`,
+  )
   return newColor === undefined ? { record: checked } : { record: checked, newColor }
 }
 
 /** `/color` is the only way a plugin reaches the prompt bar; its rows are emptied as stored. */
 const setColor = ($: EngineInterface, color: Color): void => {
   $.clock.after(0, () => {
-    $.command
-      .run({ command: 'color', args: color })
-      .catch((error: unknown) => $.ui.log(`color failed: ${String(error)}`))
+    $.command.run({ command: 'color', args: color }).catch(async (error: unknown) => {
+      $.ui.log(`color failed: ${String(error)}`)
+      log($, await $.session.id(), `/color ${color} failed: ${String(error)}`)
+    })
   })
 }
 
@@ -321,7 +368,10 @@ export const register: Register = (on, options) => {
       isChecking = true
       $.clock.after(0, () => {
         check($, model, style)
-          .catch((error: unknown) => $.ui.log(`check failed: ${String(error)}`))
+          .catch(async (error: unknown) => {
+            $.ui.log(`check failed: ${String(error)}`)
+            log($, await $.session.id(), `check failed: ${String(error)}`)
+          })
           .finally(() => {
             isChecking = false
           })
@@ -352,6 +402,7 @@ export const register: Register = (on, options) => {
     }
     const isReset = row.kind === 'echo' && (row.value === 'default' || row.value === 'reset')
     const color = isColor(row.value) ? row.value : undefined
+    log($, sessionId, `person ran /color ${row.value}`)
     if (isReset || color !== undefined || !record.isColorUserSet) {
       await writeRecord(
         $,
@@ -374,6 +425,9 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     const stored = await readRecord($, e.session_id)
     let { record, title } = onPrompt(stored, e.session_title)
+    if (record.isUserNamed && !stored.isUserNamed) {
+      log($, e.session_id, `person named the session ${JSON.stringify(e.session_title)}, stopping`)
+    }
     if (record !== stored) await writeRecord($, e.session_id, record)
     if (!record.isUserNamed && record.checkedAt === undefined) {
       const messages = [{ role: 'user', text: e.prompt }] as const
@@ -398,6 +452,7 @@ export const register: Register = (on, options) => {
         await writeRecord($, e.session_id, record)
       }
     }
+    if (title !== undefined) log($, e.session_id, `applied name ${title}`)
     return title === undefined ? result : { ...result, sessionTitle: title }
   }).catch(($, e, next) => next(e))
 
@@ -408,11 +463,21 @@ export const register: Register = (on, options) => {
    */
   on('classic.SessionStart', async ($, e, next) => {
     const result = await next(e)
+    if (e.source === 'clear' || e.source === 'fork' || e.source === 'resume') {
+      log(
+        $,
+        e.session_id,
+        `${e.source}${e.session_title === undefined ? '' : ` of ${e.session_title}`}`,
+      )
+    }
     if (e.source === 'clear') {
       await writeRecord($, e.session_id, onClear(e.session_title))
       await claim($, e.session_id, () => undefined)
     } else if (e.source === 'fork') {
-      const parent = forkParent(await readRecords($), e.session_title)
+      const parent = forkParent(
+        (await readRecords($)).map(([, r]) => r),
+        e.session_title,
+      )
       if (parent !== undefined) {
         const record = onFork(parent, e.session_title)
         await writeRecord($, e.session_id, record)
