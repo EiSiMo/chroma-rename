@@ -1,7 +1,10 @@
 import type { EngineInterface, Register } from 'claude-code'
 import {
+  DEFAULT_STYLE,
   SYSTEM_PROMPT,
   buildTitlePrompt,
+  isStyle,
+  type Style,
   colorRowIn,
   isColor,
   onUserColor,
@@ -203,6 +206,7 @@ type Consulted = { readonly record: SessionRecord; readonly newColor?: Color }
 const consult = async (
   $: EngineInterface,
   model: string,
+  style: Style,
   sessionId: string,
   messages: readonly Message[],
   turns: number,
@@ -215,7 +219,7 @@ const consult = async (
   const current = isFresh
     ? { color: record.color, isColorFixed }
     : { name: record.pending ?? record.applied, color: record.color, isColorFixed }
-  const prompt = buildTitlePrompt(messages, current, free)
+  const prompt = buildTitlePrompt(messages, current, free, style)
   if (prompt === null) return undefined
 
   const reply = await $.model.complete({
@@ -233,7 +237,7 @@ const consult = async (
     return { record: checked }
   }
 
-  const parsed = reply.isAnswered ? parseReply(reply.text) : null
+  const parsed = reply.isAnswered ? parseReply(reply.text, style) : null
   if (parsed?.kind !== 'name') {
     const checked = onChecked(latest, turns, null)
     await writeRecord($, sessionId, checked)
@@ -263,7 +267,7 @@ const setColor = ($: EngineInterface, color: Color): void => {
 }
 
 /** The check after a turn; its name is applied at the next prompt. */
-const check = async ($: EngineInterface, model: string): Promise<void> => {
+const check = async ($: EngineInterface, model: string, style: Style): Promise<void> => {
   const sessionId = await $.session.id()
   const record = await readRecord($, sessionId)
   const turns = await $.session.turns()
@@ -271,6 +275,7 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
   const consulted = await consult(
     $,
     model,
+    style,
     sessionId,
     await $.session.messages(),
     turns,
@@ -281,6 +286,7 @@ const check = async ($: EngineInterface, model: string): Promise<void> => {
 
 export const register: Register = (on, options) => {
   const model = typeof options.model === 'string' && options.model !== '' ? options.model : 'haiku'
+  const style = isStyle(options.style) ? options.style : DEFAULT_STYLE
   let isChecking = false
 
   on('turn.complete', async ($, e, next) => {
@@ -296,7 +302,7 @@ export const register: Register = (on, options) => {
     if (e.agentId === undefined && !e.isAborted && !isChecking) {
       isChecking = true
       $.clock.after(0, () => {
-        check($, model)
+        check($, model, style)
           .catch((error: unknown) => $.ui.log(`check failed: ${String(error)}`))
           .finally(() => {
             isChecking = false
@@ -353,7 +359,16 @@ export const register: Register = (on, options) => {
     if (record !== stored) await writeRecord($, e.session_id, record)
     if (!record.isUserNamed && record.checkedAt === undefined) {
       const messages = [{ role: 'user', text: e.prompt }] as const
-      const consulted = await consult($, model, e.session_id, messages, 1, FIRST_TIMEOUT_MS, true)
+      const consulted = await consult(
+        $,
+        model,
+        style,
+        e.session_id,
+        messages,
+        1,
+        FIRST_TIMEOUT_MS,
+        true,
+      )
       if (consulted !== undefined) {
         const named =
           consulted.record.pending === undefined

@@ -152,6 +152,21 @@ test('names the session at the first prompt, colors it when the turn ends', asyn
   expect(commands).toEqual(['/color red'])
 })
 
+test(
+  'writes the name in the configured style',
+  { options: { style: 'free text' } },
+  async ($, on) => {
+    const { asked } = world(on, 'Fix the login redirect red')
+    const clock = mock.clock(on)
+
+    const result = await submit($)
+    await clock.advance(1)
+
+    expect(asked[0]).toContain('written naturally')
+    expect(result.sessionTitle).toBe('Fix the login redirect')
+  },
+)
+
 test('does not check again after the first turn', async ($, on) => {
   const { asked } = world(on, 'login-redirect-fix red')
   const clock = mock.clock(on)
