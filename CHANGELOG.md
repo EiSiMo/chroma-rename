@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+### Removed
+
+## [0.2.2] - 2026-10-23
+
+### Added
+
+### Changed
+
+### Fixed
+
 - A session that crashed no longer holds its color for good: once its file has gone 2 hours without an update, its color can be shared like an idle session's.
 
 ### Removed
