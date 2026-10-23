@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.3.2] - 2026-10-23
+
+### Added
+
 - The log records each session start with the plugin version, model and style, each `/color` set, and every hook failure.
 
 ### Changed
