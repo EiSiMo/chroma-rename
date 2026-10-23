@@ -27,11 +27,12 @@ describe('plugin folder', () => {
     expect(readJson(MANIFEST).name).toBe('tintname')
   })
 
-  it('ships only the manifest, icon, hooks and engine tests', () => {
+  it('ships only the manifest, icon, README, hooks and engine tests', () => {
     const tracked = execFileSync('git', ['ls-files'], { cwd: join(ROOT, PLUGIN), encoding: 'utf8' })
     expect(tracked.trim().split('\n').sort()).toEqual([
       '.claude-plugin/icon.png',
       '.claude-plugin/plugin.json',
+      'README.md',
       'hooks/hooks.json',
       'hooks/register.ts',
       'hooks/title.ts',
