@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.3.0] - 2026-10-23
+
+### Added
+
 - A new session that obviously continues one of the last ten sessions gets its name and color again.
 - A log of what tintname asked and decided, in `tintname/tintname.log` under the config directory, kept under 256 KB.
 
