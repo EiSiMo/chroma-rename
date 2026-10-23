@@ -145,7 +145,8 @@ const liveSessions = async (
   )
 }
 
-const holdersPath = (dir: string, color: Color): string => `${dir}/chroma-rename/colors/${color}.json`
+const holdersPath = (dir: string, color: Color): string =>
+  `${dir}/chroma-rename/colors/${color}.json`
 
 /** One color's holders; a file caught mid-write is read again, a missing one holds nobody. */
 const readHolders = async ($: EngineInterface, dir: string, color: Color): Promise<Holders> => {

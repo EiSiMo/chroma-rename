@@ -493,7 +493,9 @@ test('finds the configuration on Windows without running a command', async ($, o
   expect(runs).toEqual([])
   expect(commands).toContain('/color red')
   expect(
-    [...files.keys()].some((p) => p.endsWith('C:\\Users\\test/.claude/chroma-rename/colors/red.json')),
+    [...files.keys()].some((p) =>
+      p.endsWith('C:\\Users\\test/.claude/chroma-rename/colors/red.json'),
+    ),
   ).toBe(true)
 })
 
@@ -606,7 +608,9 @@ test('clears the claims of ended sessions when a session starts', async ($, on) 
   await drive(clock, $.classic.SessionStart({ session_id: SESSION_ID, source: 'startup' }))
 
   expect(claimsIn(files)).toEqual({ open: 'red' })
-  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain('released blue of ended ended')
+  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain(
+    'released blue of ended ended',
+  )
 })
 
 test('logs the earlier sessions it offered', async ($, on) => {
@@ -620,7 +624,9 @@ test('logs the earlier sessions it offered', async ($, on) => {
   becomeSession('later')
   await submit($, clock, undefined, 'later')
 
-  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain('earlier [karten-export (blue)]')
+  expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain(
+    'earlier [karten-export (blue)]',
+  )
 })
 
 test('lets its color go when the session ends', async ($, on) => {
