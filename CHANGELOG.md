@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- The log records each session start with the plugin version, model and style, each `/color` set, and every hook failure.
+
 ### Changed
+
+- A session that ends lets its color go at once, instead of at the next session start.
 
 ### Fixed
 
