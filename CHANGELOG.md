@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A privacy policy, linked from the README.
+
 ### Changed
 
 - Renamed from tintname to chroma-rename. The log and color files now sit in `chroma-rename/` under the config directory.

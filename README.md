@@ -67,6 +67,10 @@ Only `/color <color>`, after a turn ends, to set the prompt bar color. It runs n
 
 Every hook passes its event on unchanged when it fails. chroma-rename never changes permission decisions, permission mode, settings or Remote Control.
 
+## Privacy
+
+chroma-rename runs only on your computer. It sends your conversation to Claude through Claude Code to pick a name, stores no prompts and shares nothing with anyone. See the [privacy policy](https://github.com/EiSiMo/chroma-rename/blob/main/PRIVACY.md).
+
 ## Licence
 
 [MIT](LICENSE)
