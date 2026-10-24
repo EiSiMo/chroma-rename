@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.4.0] - 2026-10-24
+
+### Added
+
 - A privacy policy, linked from the README.
 
 ### Changed
