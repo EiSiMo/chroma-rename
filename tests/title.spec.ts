@@ -23,6 +23,7 @@ import {
   onChecked,
   onModelMissing,
   onClear,
+  shownName,
   forkParent,
   onFork,
   onPrompt,
@@ -328,6 +329,14 @@ describe('onPrompt', () => {
   it('leaves the record alone when nothing is pending', () => {
     const record = { applied: 'same', checkedAt: 2 }
     expect(onPrompt(record, 'same').record).toBe(record)
+  })
+})
+
+describe('shownName', () => {
+  it('is the name the person gave, else the one the plugin applied', () => {
+    expect(shownName({ applied: 'auto', isUserNamed: true, userName: 'mine' })).toBe('mine')
+    expect(shownName({ applied: 'auto' })).toBe('auto')
+    expect(shownName({})).toBeUndefined()
   })
 })
 
