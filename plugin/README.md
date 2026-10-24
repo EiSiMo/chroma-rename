@@ -20,7 +20,7 @@ Only `/color <color>`, after a turn ends, to set the prompt bar color. It runs n
 
 - `classic.UserPromptSubmit`: reads the first prompt to pick a name and applies a waiting name as the session title. The prompt itself is never changed or blocked.
 - `turn.complete`: after a turn, asks the model whether the name still fits and runs a waiting `/color`.
-- `session.append` (door `command`): empties only the rows of `/color` runs chroma-rename made itself. Your own `/color` runs stay as they are, and their color is kept as yours.
+- `session.append` (door `command`): empties only the rows of `/color` runs chroma-rename made itself. Your own `/color` runs stay as they are, and their color is kept as yours. A `/rename` row is kept as it is and marks the session as named by you.
 - `classic.SessionStart`: starts over on `/clear` and forks, takes the color back on resume, and clears the color claims of sessions that no longer run.
 - `session.end`: releases the session's color.
 

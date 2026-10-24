@@ -37,6 +37,8 @@ export type SessionRecord = {
   readonly isColorUserSet?: boolean
   /** Set once the person names the session themselves; the plugin then stays out. */
   readonly isUserNamed?: boolean
+  /** The name the person gave the session, offered to later sessions in place of `applied`. */
+  readonly userName?: string
   /** Set once the person has been told the configured model was not found. */
   readonly isModelWarned?: boolean
 }
@@ -112,8 +114,9 @@ export const MAX_RECENT = 10
 
 /**
  * The newest `MAX_RECENT` sessions the plugin named, newest first, one per
- * name: not `sessionId` itself, nor one `isLive` reports open now, nor one
- * named `exclude`, which a fork inherited from its parent.
+ * name, under the name the person gave it if they renamed it: not `sessionId`
+ * itself, nor one `isLive` reports open now, nor one named `exclude`, which a
+ * fork inherited from its parent.
  */
 export const recentOf = (
   records: readonly (readonly [string, SessionRecord])[],
@@ -121,17 +124,12 @@ export const recentOf = (
   isLive: (id: string) => boolean,
   exclude?: string,
 ): Recent[] => {
-  const named = [...records]
-    .reverse()
-    .flatMap(([id, r]) =>
-      id === sessionId ||
-      r.isUserNamed ||
-      r.applied === undefined ||
-      r.applied === exclude ||
-      isLive(id)
-        ? []
-        : [r.color === undefined ? { name: r.applied } : { name: r.applied, color: r.color }],
-    )
+  const named = [...records].reverse().flatMap(([id, r]) => {
+    const name = r.isUserNamed ? r.userName : r.applied
+    return id === sessionId || name === undefined || name === exclude || isLive(id)
+      ? []
+      : [r.color === undefined ? { name } : { name, color: r.color }]
+  })
   return named
     .filter((r, i) => named.findIndex((n) => n.name === r.name) === i)
     .slice(0, MAX_RECENT)
@@ -304,8 +302,16 @@ export type Reply =
   | { readonly kind: 'keep' }
   | { readonly kind: 'name'; readonly name: string; readonly color?: Color }
 
-/** Reads the model's line: `KEEP`, or a name in the style followed by a color, or `null`. */
-export const parseReply = (raw: string, style: Style = DEFAULT_STYLE): Reply | null => {
+/**
+ * Reads the model's line: `KEEP`, or a name in the style followed by a color,
+ * or `null`. A name that is one of `known` in the style is that name as it is
+ * written there, so a name the person gave survives reuse.
+ */
+export const parseReply = (
+  raw: string,
+  style: Style = DEFAULT_STYLE,
+  known: readonly string[] = [],
+): Reply | null => {
   const line = raw
     .split('\n')
     .map((l) => l.trim().replace(/^["'`*_]+|["'`*_.]+$/g, ''))
@@ -316,8 +322,12 @@ export const parseReply = (raw: string, style: Style = DEFAULT_STYLE): Reply | n
   const words = line.split(/\s+/)
   const last = words.at(-1)?.toLowerCase() ?? ''
   const color = isColor(last) ? last : undefined
-  const name = sanitizeName((color === undefined ? words : words.slice(0, -1)).join(' '), style)
-  if (name === null) return null
+  const sanitized = sanitizeName(
+    (color === undefined ? words : words.slice(0, -1)).join(' '),
+    style,
+  )
+  if (sanitized === null) return null
+  const name = known.find((k) => sanitizeName(k, style) === sanitized) ?? sanitized
   return color === undefined ? { kind: 'name', name } : { kind: 'name', name, color }
 }
 
@@ -429,6 +439,14 @@ export const pickColor = (
 export const isDue = (turns: number, checkedAt: number | undefined): boolean =>
   turns >= 1 && (checkedAt === undefined || turns - checkedAt >= Math.min(checkedAt, MAX_GAP))
 
+/** The record after the person named the session `name`: the plugin stops naming it. */
+export const onUserNamed = (record: SessionRecord, name: string): SessionRecord => ({
+  ...record,
+  isUserNamed: true,
+  userName: name,
+  pending: undefined,
+})
+
 export type PromptOutcome = { readonly record: SessionRecord; readonly title?: string }
 
 /**
@@ -442,7 +460,7 @@ export const onPrompt = (
 ): PromptOutcome => {
   if (record.isUserNamed) return { record }
   if (sessionTitle !== undefined && sessionTitle !== record.applied) {
-    return { record: { ...record, isUserNamed: true, pending: undefined } }
+    return { record: onUserNamed(record, sessionTitle) }
   }
   if (record.pending === undefined || record.pending === sessionTitle) {
     return { record: record.pending === undefined ? record : { ...record, pending: undefined } }
@@ -536,6 +554,19 @@ const COLOR_OUTPUT = /^<local-command-stdout>Session color set to: ([a-z]+)<\/lo
 
 /** A stored row of a `/color` run: the echo with its arguments, or the output with its color. */
 export type ColorRow = { readonly kind: 'echo' | 'output'; readonly value: string }
+
+const RENAME_OUTPUT =
+  /^<local-command-stdout>Session renamed to: ([\s\S]+)<\/local-command-stdout>$/
+
+/**
+ * The name in the output row of a `/rename` run, or `undefined` for any other
+ * row. It is seen when the rename happens, so a session closed right after
+ * still counts as named by the person.
+ */
+export const renamedIn = (text: string): string | undefined => {
+  const name = RENAME_OUTPUT.exec(text.trim())?.[1]?.trim()
+  return name === undefined || name === '' ? undefined : name
+}
 
 /** Reads a stored row as part of a `/color` run, or `undefined` for any other row. */
 export const colorRowIn = (text: string): ColorRow | undefined => {

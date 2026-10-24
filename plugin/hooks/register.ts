@@ -24,6 +24,8 @@ import {
   onModelMissing,
   onPrompt,
   onRan,
+  onUserNamed,
+  renamedIn,
   parseReply,
   pickColor,
   recentOf,
@@ -324,7 +326,13 @@ const consult = async (
     return { record: checked }
   }
 
-  const parsed = reply.isAnswered ? parseReply(reply.text, style) : null
+  const parsed = reply.isAnswered
+    ? parseReply(
+        reply.text,
+        style,
+        recent.map((r) => r.name),
+      )
+    : null
   if (reply.isAnswered && parsed === null) log($, sessionId, 'reply not usable')
   if (parsed?.kind !== 'name') {
     const checked = onChecked(latest, turns, null)
@@ -423,10 +431,22 @@ export const register: Register = (on, options) => {
    * output alike: an empty row is stored as `(no content)` and drawn as nothing.
    * A run of the person's own is kept, and its color becomes theirs: claimed
    * for them and never changed by the plugin. `default` releases the claim.
+   * A `/rename` names the session as the person's own right away, also when
+   * it is closed before the next prompt.
    */
   on('session.append', { door: 'command' }, async ($, e, next) => {
     const block = e.message.content[0]
     const text = block?.type === 'text' && typeof block.text === 'string' ? block.text : ''
+    const renamed = renamedIn(text)
+    if (renamed !== undefined) {
+      const sessionId = await $.session.id()
+      const record = await readRecord($, sessionId)
+      if (record.userName !== renamed) {
+        await writeRecord($, sessionId, onUserNamed(record, renamed))
+        log($, sessionId, `person renamed the session ${JSON.stringify(renamed)}, stopping`)
+      }
+      return next(e)
+    }
     const row = colorRowIn(text)
     if (row === undefined) return next(e)
     const sessionId = await $.session.id()

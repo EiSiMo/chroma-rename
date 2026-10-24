@@ -18,7 +18,7 @@
 - `log` in `register.ts` appends to `chroma-rename/chroma-rename.log` under the config directory (read, add, write; trimmed by `appendLog`). Every decision worth tracing goes there, and each hook's `.catch` logs its failure; it never raises.
 - Names are applied through `sessionTitle` at the next prompt, never by running `/rename`, which writes the command into the conversation the model reads. Colors have no such field, so they go through `$.command.run` with `/color`; its rows are not raised through `ui.render`, so they are emptied at `session.append`, and the run waits for the turn to end because a `/color` queued mid-turn shows a preview row no hook reaches.
 - The plugin runs no commands (`$.process`), so it works the same on Linux, macOS and Windows: the config directory comes from `$.env`, files go through `$.fs`.
-- A session title the plugin did not set means the person named the session; the record is marked `isUserNamed` and the plugin stops for that session.
+- A session title the plugin did not set means the person named the session; the record is marked `isUserNamed` with their `userName` and the plugin stops for that session. A `/rename` output row at `session.append` does the same right away, since a session can close before its next prompt. Later sessions are offered the person's name, and a reply that reuses it keeps its spelling.
 
 ## 3. Naming and file conventions
 
