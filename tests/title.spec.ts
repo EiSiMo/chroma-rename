@@ -13,6 +13,8 @@ import {
   colorRowIn,
   availableColors,
   onUserColor,
+  onUserNamed,
+  renamedIn,
   IDLE_SHARE_MS,
   type Claim,
   cleanPrompt,
@@ -219,6 +221,27 @@ describe('parseReply', () => {
   })
 })
 
+describe('parseReply with known names', () => {
+  it('keeps the spelling of a known name the reply matches in the style', () => {
+    expect(parseReply('karten-export-neu green', 'kebab-case', ['Karten Export Neu'])).toEqual({
+      kind: 'name',
+      name: 'Karten Export Neu',
+      color: 'green',
+    })
+    expect(parseReply('Karten Export Neu', 'kebab-case', ['Karten Export Neu'])).toEqual({
+      kind: 'name',
+      name: 'Karten Export Neu',
+    })
+  })
+
+  it('writes any other name in the style', () => {
+    expect(parseReply('Karten Export', 'kebab-case', ['Karten Export Neu'])).toEqual({
+      kind: 'name',
+      name: 'karten-export',
+    })
+  })
+})
+
 describe('pickColor', () => {
   it('takes the wanted color when free', () => {
     expect(pickColor('orange', undefined, ['orange', 'blue'])).toBe('orange')
@@ -293,7 +316,7 @@ describe('onPrompt', () => {
 
   it('treats a title it did not set as the person naming the session', () => {
     expect(onPrompt({ applied: 'mine', pending: 'next', color: 'red' }, 'theirs')).toEqual({
-      record: { applied: 'mine', color: 'red', isUserNamed: true },
+      record: { applied: 'mine', color: 'red', isUserNamed: true, userName: 'theirs' },
     })
   })
 
@@ -399,6 +422,34 @@ describe('onModelMissing', () => {
       applied: 'Old',
       checkedAt: 4,
       isModelWarned: true,
+    })
+  })
+})
+
+describe('renamedIn', () => {
+  it('reads the name of a /rename output row', () => {
+    expect(
+      renamedIn('<local-command-stdout>Session renamed to: Mein Thema</local-command-stdout>'),
+    ).toBe('Mein Thema')
+  })
+
+  it('ignores other rows', () => {
+    expect(renamedIn('<command-name>/rename</command-name><command-args>x</command-args>')).toBe(
+      undefined,
+    )
+    expect(
+      renamedIn('<local-command-stdout>Session color set to: red</local-command-stdout>'),
+    ).toBe(undefined)
+  })
+})
+
+describe('onUserNamed', () => {
+  it('stops the plugin, keeps the color and drops a pending name', () => {
+    expect(onUserNamed({ applied: 'mine', pending: 'next', color: 'red' }, 'theirs')).toEqual({
+      applied: 'mine',
+      color: 'red',
+      isUserNamed: true,
+      userName: 'theirs',
     })
   })
 })
@@ -522,10 +573,10 @@ describe('idleSinceOf', () => {
 describe('recentOf', () => {
   const noneLive = () => false
 
-  it('lists named sessions newest first, without this one, user-named or open ones', () => {
+  it('lists named sessions newest first, without this one or open ones', () => {
     const records: [string, SessionRecord][] = [
       ['a', { applied: 'karten-export', color: 'blue' }],
-      ['b', { applied: 'eigener-name', isUserNamed: true }],
+      ['b', { applied: 'auto-name', isUserNamed: true }],
       ['c', { applied: 'login-fix', color: 'red' }],
       ['open', { applied: 'parser', color: 'green' }],
       ['me', { applied: 'mine', color: 'pink' }],
@@ -535,6 +586,13 @@ describe('recentOf', () => {
       { name: 'login-fix', color: 'red' },
       { name: 'karten-export', color: 'blue' },
     ])
+  })
+
+  it('offers a session the person renamed under their name', () => {
+    const records: [string, SessionRecord][] = [
+      ['a', { applied: 'auto-name', isUserNamed: true, userName: 'Mein Thema', color: 'pink' }],
+    ]
+    expect(recentOf(records, 'me', noneLive)).toEqual([{ name: 'Mein Thema', color: 'pink' }])
   })
 
   it('keeps the newest of one name and drops the excluded one', () => {

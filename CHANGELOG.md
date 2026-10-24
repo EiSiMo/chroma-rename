@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A new session on the same topic as one you renamed takes your name, written as you wrote it, instead of a new one.
+
 ### Fixed
+
+- A session renamed with `/rename` and closed before the next prompt no longer brings back the name chroma-rename had given it.
 
 ### Removed
 

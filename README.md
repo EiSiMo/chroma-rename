@@ -41,7 +41,7 @@ Name a session with `/rename` and chroma-rename leaves its name alone. Set a col
 
 ## Same topic, same look
 
-When a new session obviously continues one of your last ten, chroma-rename gives it that session's name, and its color while no open session holds it.
+When a new session obviously continues one of your last ten, chroma-rename gives it that session's name, and its color while no open session holds it. A session you renamed is offered under your name, written as you wrote it.
 
 ## What chroma-rename writes, runs and hooks
 

@@ -652,3 +652,40 @@ test('lets its color go when the session ends', async ($, on) => {
     'ended (prompt_input_exit), color released',
   )
 })
+
+test('offers the name the person gave a session closed right after /rename', async ($, on) => {
+  let reply = 'karten-export green'
+  const { asked, files, becomeSession } = world(on, () => reply)
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  await drive(
+    clock,
+    $.session.append({
+      message: {
+        type: 'system',
+        name: 'local_command',
+        content: [
+          {
+            type: 'text',
+            text: '<local-command-stdout>Session renamed to: Karten Export Neu</local-command-stdout>',
+          },
+        ],
+      },
+      door: 'command',
+      origin: { kind: 'composer' },
+      uuid: 'row-1',
+    }),
+  )
+  files.delete(`${DIR}/sessions/0.json`)
+  for (const [path, text] of liveSessions(['later'])) files.set(path, text)
+  becomeSession('later')
+
+  reply = 'Karten Export Neu green'
+  const result = await submit($, clock, undefined, 'later')
+
+  expect(asked[1]).toContain('Earlier sessions, newest first:\n- Karten Export Neu (green)')
+  expect(asked[1]).not.toContain('- karten-export')
+  expect(result.sessionTitle).toBe('Karten Export Neu')
+})
