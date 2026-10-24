@@ -321,9 +321,17 @@ export const parseReply = (raw: string, style: Style = DEFAULT_STYLE): Reply | n
   return color === undefined ? { kind: 'name', name } : { kind: 'name', name, color }
 }
 
-/** The colors no other live session holds, in `COLORS` order. */
-export const freeColors = (taken: readonly Color[]): Color[] =>
-  COLORS.filter((c) => !taken.includes(c))
+const SIMILAR: readonly Color[] = ['blue', 'cyan']
+
+/**
+ * The colors no other live session holds, in `COLORS` order. Blue and cyan
+ * look alike, so they only count as free once every other color is held.
+ */
+export const freeColors = (taken: readonly Color[]): Color[] => {
+  const free = COLORS.filter((c) => !taken.includes(c))
+  const distinct = free.filter((c) => !SIMILAR.includes(c))
+  return distinct.length > 0 ? distinct : free
+}
 
 export const IDLE_SHARE_MS = 2 * 60 * 60 * 1000
 
