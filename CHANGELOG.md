@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+### Removed
+
+## [0.5.1] - 2026-10-24
+
+### Added
+
+### Changed
+
+### Fixed
+
 - `/clear` no longer carries the old name over: the new session shows no name until its first prompt is named, and the cleared session keeps its name.
 
 ### Removed
