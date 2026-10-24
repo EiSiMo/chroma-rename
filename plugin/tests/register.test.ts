@@ -305,12 +305,12 @@ test('takes a free color when another live session holds the wanted one', async 
   const { commands, files } = world(on, 'login-redirect-fix red')
   const clock = mock.clock(on)
   for (const [path, text] of liveSessions([SESSION_ID, 'other'])) files.set(path, text)
-  seedClaims(files, { other: 'red', gone: 'blue' })
+  seedClaims(files, { other: 'red', gone: 'green' })
 
   await completeTurn($, clock)
 
-  expect(commands).toContain('/color blue')
-  expect(claimsIn(files)).toEqual({ other: 'red', [SESSION_ID]: 'blue' })
+  expect(commands).toContain('/color green')
+  expect(claimsIn(files)).toEqual({ other: 'red', [SESSION_ID]: 'green' })
 })
 
 test('keeps the name when the model says KEEP', async ($, on) => {
@@ -406,12 +406,12 @@ test('gives a fork its own name and color', async ($, on) => {
   await completeTurn($, clock)
 
   expect(result.sessionTitle).toBe('cookie-cleanup')
-  expect(commands).toEqual(['/color red', '/color blue'])
-  expect(claimsIn(files)).toEqual({ [SESSION_ID]: 'red', fork: 'blue' })
+  expect(commands).toEqual(['/color red', '/color green'])
+  expect(claimsIn(files)).toEqual({ [SESSION_ID]: 'red', fork: 'green' })
 })
 
 test('leaves a fork of a session the person named alone', async ($, on) => {
-  const { asked, commands, becomeSession } = world(on, 'cookie-cleanup blue')
+  const { asked, commands, becomeSession } = world(on, 'cookie-cleanup green')
   const clock = mock.clock(on)
   on('classic.SessionStart', () => ({}))
 
@@ -463,8 +463,8 @@ test('gives way when another session takes the same color at the same time', asy
 
   await completeTurn($, clock)
 
-  expect(commands).toContain('/color blue')
-  expect(claimsIn(files)).toEqual({ other: 'red', [SESSION_ID]: 'blue' })
+  expect(commands).toContain('/color green')
+  expect(claimsIn(files)).toEqual({ other: 'red', [SESSION_ID]: 'green' })
 })
 
 test('finds the configuration on Windows without running a command', async ($, on) => {
@@ -527,7 +527,7 @@ test('still names and colors when the color files cannot be written', async ($, 
 })
 
 test('shares the color of a session that crashed while busy', async ($, on) => {
-  const { commands, files } = world(on, 'login-redirect-fix blue')
+  const { commands, files } = world(on, 'login-redirect-fix green')
   const clock = mock.clock(on)
   const now = Date.now()
   const others = COLORS.map((color) => `holder-${color}`)
@@ -550,7 +550,7 @@ test('shares the color of a session that crashed while busy', async ($, on) => {
 })
 
 test('reuses the name and color of an earlier session on the same topic', async ($, on) => {
-  let reply = 'karten-export blue'
+  let reply = 'karten-export green'
   const { asked, commands, files, becomeSession } = world(on, () => reply)
   const clock = mock.clock(on)
 
@@ -561,17 +561,17 @@ test('reuses the name and color of an earlier session on the same topic', async 
   for (const [path, text] of liveSessions(['later'])) files.set(path, text)
   becomeSession('later')
 
-  reply = 'karten-export blue'
+  reply = 'karten-export green'
   const result = await submit($, clock, undefined, 'later')
   await completeTurn($, clock)
 
-  expect(asked[1]).toContain('Earlier sessions, newest first:\n- karten-export (blue)')
+  expect(asked[1]).toContain('Earlier sessions, newest first:\n- karten-export (green)')
   expect(result.sessionTitle).toBe('karten-export')
-  expect(commands).toEqual(['/color blue', '/color blue'])
+  expect(commands).toEqual(['/color green', '/color green'])
 })
 
 test('does not offer a session that is still open', async ($, on) => {
-  const { asked, files, becomeSession } = world(on, 'karten-export blue')
+  const { asked, files, becomeSession } = world(on, 'karten-export green')
   const clock = mock.clock(on)
 
   await submit($, clock)
@@ -603,18 +603,18 @@ test('clears the claims of ended sessions when a session starts', async ($, on) 
   const clock = mock.clock(on)
   on('classic.SessionStart', () => ({}))
   for (const [path, text] of liveSessions([SESSION_ID, 'open'])) files.set(path, text)
-  seedClaims(files, { open: 'red', ended: 'blue', gone: 'red' })
+  seedClaims(files, { open: 'red', ended: 'green', gone: 'red' })
 
   await drive(clock, $.classic.SessionStart({ session_id: SESSION_ID, source: 'startup' }))
 
   expect(claimsIn(files)).toEqual({ open: 'red' })
   expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain(
-    'released blue of ended ended',
+    'released green of ended ended',
   )
 })
 
 test('logs the earlier sessions it offered', async ($, on) => {
-  const { files, becomeSession } = world(on, 'karten-export blue')
+  const { files, becomeSession } = world(on, 'karten-export green')
   const clock = mock.clock(on)
 
   await submit($, clock)
@@ -625,7 +625,7 @@ test('logs the earlier sessions it offered', async ($, on) => {
   await submit($, clock, undefined, 'later')
 
   expect(files.get(`${DIR}/chroma-rename/chroma-rename.log`)).toContain(
-    'earlier [karten-export (blue)]',
+    'earlier [karten-export (green)]',
   )
 })
 

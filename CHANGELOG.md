@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Blue and cyan, which look alike, are only handed out once every other color is taken.
 - Renamed from tintname to chroma-rename. The log and color files now sit in `chroma-rename/` under the config directory.
 
 ### Fixed

@@ -239,8 +239,21 @@ describe('pickColor', () => {
 })
 
 describe('freeColors', () => {
+  it('keeps blue and cyan back while another color is free', () => {
+    expect(freeColors([])).not.toContain('blue')
+    expect(freeColors([])).not.toContain('cyan')
+  })
+
+  it('offers blue and cyan once every other color is taken', () => {
+    const others = COLORS.filter((c) => c !== 'blue' && c !== 'cyan')
+    expect(freeColors(others)).toEqual(['blue', 'cyan'])
+    expect(freeColors([...others, 'blue'])).toEqual(['cyan'])
+  })
+
   it('drops the taken colors', () => {
-    expect(freeColors(['red', 'cyan'])).toEqual(COLORS.filter((c) => c !== 'red' && c !== 'cyan'))
+    expect(freeColors(['red', 'cyan'])).toEqual(
+      COLORS.filter((c) => c !== 'red' && c !== 'cyan' && c !== 'blue'),
+    )
   })
 })
 
@@ -423,7 +436,9 @@ describe('availableColors', () => {
   const NOW = 10 * IDLE_SHARE_MS
 
   it('offers the free colors while there are any', () => {
-    expect(availableColors([{ color: 'red' }], NOW)).toEqual(COLORS.filter((c) => c !== 'red'))
+    expect(availableColors([{ color: 'red' }], NOW)).toEqual(
+      COLORS.filter((c) => c !== 'red' && c !== 'blue' && c !== 'cyan'),
+    )
   })
 
   it('with every color held, offers those of long-idle sessions, longest idle first', () => {
