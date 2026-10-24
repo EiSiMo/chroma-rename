@@ -1,6 +1,6 @@
 {
   "name": "chroma-rename",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Names Claude Code sessions in short kebab-case and gives each open session its own color.",
   "type": "module",

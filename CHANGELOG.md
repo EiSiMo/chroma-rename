@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+### Fixed
+
+### Removed
+
+## [0.5.0] - 2026-10-24
+
+### Added
+
+### Changed
+
 - A new session on the same topic as one you renamed takes your name, written as you wrote it, instead of a new one.
 
 ### Fixed
