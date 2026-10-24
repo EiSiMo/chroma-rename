@@ -471,6 +471,10 @@ export const onPrompt = (
   }
 }
 
+/** The name the session shows: the person's own, else the one this plugin applied. */
+export const shownName = (record: SessionRecord): string | undefined =>
+  record.isUserNamed ? record.userName : record.applied
+
 /**
  * The record after `/clear`: a fresh start, except that the title the session
  * still shows counts as the plugin's, so the next name replaces it.

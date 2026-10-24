@@ -382,6 +382,28 @@ test('starts over after /clear', async ($, on) => {
   expect(commands).toEqual(['/color red', '/color orange'])
 })
 
+test('keeps the name with the cleared session, so the new one shows none', async ($, on) => {
+  const { commands } = world(on, '"login-redirect-fix red"')
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock)
+  const clear = (args: string) =>
+    drive(
+      clock,
+      $.command.run({
+        command: 'clear',
+        args,
+        origin: { kind: 'composer' },
+        presentation: { isFullscreen: false, columns: 80 },
+      }),
+    )
+  await clear('')
+  await clear('mine')
+
+  expect(commands).toEqual(['/color red', '/clear login-redirect-fix', '/clear mine'])
+})
+
 test('gives a fork its own name and color', async ($, on) => {
   let reply = 'login-redirect-fix red'
   const { commands, files, becomeSession } = world(on, () => reply)

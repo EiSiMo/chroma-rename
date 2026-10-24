@@ -26,6 +26,7 @@ import {
   onRan,
   onUserNamed,
   renamedIn,
+  shownName,
   parseReply,
   pickColor,
   recentOf,
@@ -472,6 +473,23 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch(async ($, e, next) => {
     log($, await $.session.id(), `transcript hook failed: ${String(next.error)}`)
+    return next(e)
+  })
+
+  /**
+   * A bare `/clear` carries the session's title over to the new session, which
+   * then shows the old name until its first prompt. `/clear <name>` leaves the
+   * name with the ended session instead, so the shown name is passed along.
+   */
+  on('command.run', { command: 'clear' }, async ($, e, next) => {
+    if (e.args.trim() !== '') return next(e)
+    const sessionId = await $.session.id()
+    const name = shownName(await readRecord($, sessionId))
+    if (name === undefined) return next(e)
+    log($, sessionId, `clear: name ${name} stays with this session`)
+    return next({ ...e, args: name })
+  }).catch(async ($, e, next) => {
+    log($, await $.session.id(), `clear hook failed: ${String(next.error)}`)
     return next(e)
   })
 
