@@ -1,6 +1,6 @@
 {
   "name": "chroma-rename",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Names Claude Code sessions in short kebab-case or a style you pick, in the chat's language, and gives each open session its own prompt bar color.",
   "author": { "name": "Moritz", "url": "https://github.com/EiSiMo" },
   "homepage": "https://github.com/EiSiMo/chroma-rename",

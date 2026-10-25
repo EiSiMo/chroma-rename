@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+### Removed
+
+## [0.5.2] - 2026-10-25
+
+### Added
+
+### Changed
+
+### Fixed
+
 - A session color that could not be set, for example because the turn was stopped, is set again when the next turn ends, instead of never showing.
 - A `/color` you type while the plugin is picking a color now stays yours.
 - In the `free text`, `Title Case` and `Sentence case` styles, a rename that ends in a color word, such as "Make the button green", keeps that word.
