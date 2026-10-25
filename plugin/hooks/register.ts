@@ -17,8 +17,10 @@ import {
   type Holders,
   isDue,
   isModelNotFound,
+  needsColor,
   onChecked,
   onClear,
+  onColorFailed,
   forkParent,
   onFork,
   onModelMissing,
@@ -332,6 +334,7 @@ const consult = async (
         reply.text,
         style,
         recent.map((r) => r.name),
+        needsColor(current),
       )
     : null
   if (reply.isAnswered && parsed === null) log($, sessionId, 'reply not usable')
@@ -346,9 +349,19 @@ const consult = async (
   const color = await claim($, sessionId, (available) =>
     settled.isColorUserSet ? settled.color : pickColor(parsed.color, settled.color, available),
   )
-  const newColor =
-    color !== undefined && color !== settled.color && !settled.isColorUserSet ? color : undefined
-  const named = onChecked(settled, turns, parsed.name, color)
+  const claimed = await readRecord($, sessionId)
+  if (claimed.isColorUserSet && !settled.isColorUserSet) {
+    log($, sessionId, 'person set the color while claiming, keeping theirs')
+    await claim($, sessionId, () => claimed.color)
+  }
+  const isColorOurs = !claimed.isColorUserSet
+  const newColor = isColorOurs && color !== undefined && color !== claimed.color ? color : undefined
+  const named = onChecked(
+    claimed,
+    turns,
+    claimed.isUserNamed ? null : parsed.name,
+    isColorOurs ? color : undefined,
+  )
   const checked = newColor === undefined ? named : onRan(named, `color ${newColor}`)
   await writeRecord($, sessionId, checked)
   const reused = recent.find((r) => r.name === parsed.name)
@@ -362,14 +375,19 @@ const consult = async (
   return newColor === undefined ? { record: checked } : { record: checked, newColor }
 }
 
-/** `/color` is the only way a plugin reaches the prompt bar; its rows are emptied as stored. */
-const setColor = ($: EngineInterface, color: Color): void => {
+/**
+ * `/color` is the only way a plugin reaches the prompt bar; its rows are
+ * emptied as stored. A failed run is tried again when the next turn ends.
+ */
+const setColor = ($: EngineInterface, sessionId: string, color: Color): void => {
   $.clock.after(0, () => {
     $.command.run({ command: 'color', args: color }).then(
-      async () => log($, await $.session.id(), `set color ${color}`),
+      () => log($, sessionId, `set color ${color}`),
       async (error: unknown) => {
         $.ui.log(`color failed: ${String(error)}`)
-        log($, await $.session.id(), `/color ${color} failed: ${String(error)}`)
+        log($, sessionId, `/color ${color} failed, retrying after the next turn: ${String(error)}`)
+        const record = await readRecord($, sessionId)
+        await writeRecord($, sessionId, onColorFailed(record, color))
       },
     )
   })
@@ -390,7 +408,7 @@ const check = async ($: EngineInterface, model: string, style: Style): Promise<v
     turns,
     TIMEOUT_MS,
   )
-  if (consulted?.newColor !== undefined) setColor($, consulted.newColor)
+  if (consulted?.newColor !== undefined) setColor($, sessionId, consulted.newColor)
 }
 
 export const register: Register = (on, options) => {
@@ -400,12 +418,16 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined) {
+    if (e.agentId === undefined && !e.isAborted) {
       const sessionId = await $.session.id()
       const record = await readRecord($, sessionId)
       if (record.pendingColor !== undefined) {
-        await writeRecord($, sessionId, { ...record, pendingColor: undefined })
-        setColor($, record.pendingColor)
+        await writeRecord(
+          $,
+          sessionId,
+          onRan({ ...record, pendingColor: undefined }, `color ${record.pendingColor}`),
+        )
+        setColor($, sessionId, record.pendingColor)
       }
     }
     if (e.agentId === undefined && !e.isAborted && !isChecking) {

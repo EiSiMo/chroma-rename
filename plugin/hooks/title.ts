@@ -142,6 +142,10 @@ export type Current = {
   readonly isColorFixed?: boolean
 }
 
+/** Whether the request asks for a color: the session has none and the person set none. */
+export const needsColor = (current: Current): boolean =>
+  current.color === undefined && current.isColorFixed !== true
+
 const capitalize = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1)
 
 /** Writes lowercase words in a style other than free text. */
@@ -194,10 +198,10 @@ export const buildTitlePrompt = (
   const reply = lastReply(messages)
   const choices = free.length > 0 ? free : COLORS
 
-  const needsColor = current.color === undefined && current.isColorFixed !== true
+  const isColorAsked = needsColor(current)
 
   return [
-    needsColor
+    isColorAsked
       ? 'Reply with exactly one line: "<name> <color>".'
       : 'Reply with exactly one line: "<name>", or "KEEP" to keep the current name.',
     '',
@@ -211,7 +215,7 @@ export const buildTitlePrompt = (
       : [
           '- If this session obviously continues the work of an earlier session below, reuse that name exactly. Otherwise ignore the list.',
         ]),
-    ...(needsColor
+    ...(isColorAsked
       ? [
           '',
           'Color rules:',
@@ -298,19 +302,23 @@ export const sanitizeName = (raw: string, style: Style = DEFAULT_STYLE): string 
   return name.length < 3 ? null : name
 }
 
+const SPACED_STYLES: readonly Style[] = ['Title Case', 'Sentence case', 'free text']
+
 export type Reply =
   | { readonly kind: 'keep' }
   | { readonly kind: 'name'; readonly name: string; readonly color?: Color }
 
 /**
  * Reads the model's line: `KEEP`, or a name in the style followed by a color,
- * or `null`. A name that is one of `known` in the style is that name as it is
- * written there, so a name the person gave survives reuse.
+ * or `null`. In a style written with spaces, a closing color word is part of
+ * the name unless `isColorAsked`. A name that is one of `known` in the style
+ * is that name as it is written there, so a name the person gave survives reuse.
  */
 export const parseReply = (
   raw: string,
   style: Style = DEFAULT_STYLE,
   known: readonly string[] = [],
+  isColorAsked = true,
 ): Reply | null => {
   const line = raw
     .split('\n')
@@ -320,8 +328,8 @@ export const parseReply = (
   if (/^keep$/i.test(line)) return { kind: 'keep' }
 
   const words = line.split(/\s+/)
-  const last = words.at(-1)?.toLowerCase() ?? ''
-  const color = isColor(last) ? last : undefined
+  const last = (words.at(-1) ?? '').toLowerCase().replace(/^\((.*)\)$/, '$1')
+  const color = isColor(last) && (isColorAsked || !SPACED_STYLES.includes(style)) ? last : undefined
   const sanitized = sanitizeName(
     (color === undefined ? words : words.slice(0, -1)).join(' '),
     style,
@@ -551,6 +559,21 @@ export const onRan = (record: SessionRecord, run: string): SessionRecord => ({
   ...record,
   ran: [...(record.ran ?? []).filter((r) => r !== run), run].slice(-MAX_RAN),
 })
+
+/**
+ * The record after the plugin's `/color <color>` failed: the color waits in
+ * `pendingColor` for the next turn to end, and its run is forgotten, so a
+ * `/color` the person types meanwhile counts as theirs. Unchanged once the
+ * color moved on or became the person's.
+ */
+export const onColorFailed = (record: SessionRecord, color: Color): SessionRecord =>
+  record.color !== color || record.isColorUserSet
+    ? record
+    : {
+        ...record,
+        pendingColor: color,
+        ran: (record.ran ?? []).filter((r) => r !== `color ${color}`),
+      }
 
 const COLOR_ECHO =
   /^<command-name>\/color<\/command-name>[\s\S]*?(?:<command-args>([^<]*)<\/command-args>|$)/
