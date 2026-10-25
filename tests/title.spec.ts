@@ -28,6 +28,8 @@ import {
   onFork,
   onPrompt,
   onRan,
+  onColorFailed,
+  needsColor,
   parseReply,
   pickColor,
   freeColors,
@@ -220,6 +222,26 @@ describe('parseReply', () => {
       color: 'blue',
     })
   })
+
+  it('keeps a closing color word in the name when no color was asked', () => {
+    expect(parseReply('Make the button green', 'free text', [], false)).toEqual({
+      kind: 'name',
+      name: 'Make the button green',
+    })
+  })
+
+  it('drops a color word that cannot be part of a name in the style, asked or not', () => {
+    expect(parseReply('rust-rewrite orange', 'kebab-case', [], false)).toEqual({
+      kind: 'name',
+      name: 'rust-rewrite',
+      color: 'orange',
+    })
+    expect(parseReply('karten-export (green)')).toEqual({
+      kind: 'name',
+      name: 'karten-export',
+      color: 'green',
+    })
+  })
 })
 
 describe('parseReply with known names', () => {
@@ -395,6 +417,31 @@ describe('onRan', () => {
   it('keeps the newest runs, each once', () => {
     const record = onRan(onRan(onRan({}, 'color red'), 'color blue'), 'color red')
     expect(record.ran).toEqual(['color blue', 'color red'])
+  })
+})
+
+describe('onColorFailed', () => {
+  it('queues the color again and forgets its run', () => {
+    expect(onColorFailed({ color: 'red', ran: ['color blue', 'color red'] }, 'red')).toEqual({
+      color: 'red',
+      pendingColor: 'red',
+      ran: ['color blue'],
+    })
+  })
+
+  it("leaves a color that moved on or became the person's alone", () => {
+    const moved = { color: 'blue' as const, ran: ['color red'] }
+    const theirs = { color: 'red' as const, isColorUserSet: true }
+    expect(onColorFailed(moved, 'red')).toBe(moved)
+    expect(onColorFailed(theirs, 'red')).toBe(theirs)
+  })
+})
+
+describe('needsColor', () => {
+  it('asks for a color only while the session has none of its own', () => {
+    expect(needsColor({})).toBe(true)
+    expect(needsColor({ color: 'red' })).toBe(false)
+    expect(needsColor({ isColorFixed: true })).toBe(false)
   })
 })
 

@@ -58,6 +58,8 @@ type World = {
   readonly becomeSession: (id: string) => void
   /** Runs `fn` after each file write; a throw fails the write. */
   readonly afterWrite: (fn: (path: string) => void) => void
+  /** Makes each command run fail, as a stopped session does, until called with `false`. */
+  readonly failCommands: (isFailing: boolean) => void
 }
 
 /** One live process file per session id, as Claude Code keeps them. */
@@ -80,6 +82,7 @@ const world = (
   const files = liveSessions([SESSION_ID])
   let sessionId = SESSION_ID
   let written: (path: string) => void = () => {}
+  let isFailing = false
   mock.store(on)
   mock.env(on, env)
   on('fs.list', (_$, e) => ({
@@ -105,6 +108,7 @@ const world = (
   })
   on('command.run', (_$, e) => {
     commands.push(`/${e.command} ${e.args}`)
+    if (isFailing) throw new Error('the session was stopped')
     return {}
   })
   on('ui.toast', (_$, e) => {
@@ -136,6 +140,9 @@ const world = (
     afterWrite: (fn) => {
       written = fn
     },
+    failCommands: (value) => {
+      isFailing = value
+    },
   }
 }
 
@@ -152,11 +159,11 @@ const drive = async <T>(clock: Clock, work: Promise<T>): Promise<T> => {
   return work
 }
 
-const completeTurn = async ($: Engine, clock: Clock) => {
+const completeTurn = async ($: Engine, clock: Clock, isAborted = false) => {
   await $.turn.complete({
     answer: 'done',
     durationMs: 1,
-    isAborted: false,
+    isAborted,
     turnId: 'turn-1',
     reason: 'answer',
   })
@@ -202,6 +209,93 @@ test(
 
     expect(asked[0]).toContain('written naturally')
     expect(result.sessionTitle).toBe('Fix the login redirect')
+  },
+)
+
+const commandRow = ($: Engine, clock: Clock, text: string) =>
+  drive(
+    clock,
+    $.session.append({
+      message: { type: 'system', name: 'local_command', content: [{ type: 'text', text }] },
+      door: 'command',
+      origin: { kind: 'composer' },
+      uuid: 'row-1',
+    }),
+  )
+
+const COLOR_ECHO = (color: string): string =>
+  `<command-name>/color</command-name><command-args>${color}</command-args>`
+
+test('sets the color again after the next turn when /color failed', async ($, on) => {
+  let turns = 1
+  const { commands, failCommands } = world(on, 'login-redirect-fix red', () => turns)
+  const clock = mock.clock(on)
+
+  failCommands(true)
+  await submit($, clock)
+  await completeTurn($, clock)
+  failCommands(false)
+  turns = 2
+  await submit($, clock, 'login-redirect-fix')
+  await completeTurn($, clock)
+  const echo = await commandRow($, clock, COLOR_ECHO('red'))
+
+  expect(commands).toEqual(['/color red', '/color red'])
+  expect(echo.message?.content).toEqual([{ type: 'text', text: '(no content)' }])
+})
+
+test('keeps the color for the next turn when the turn was stopped', async ($, on) => {
+  const { commands } = world(on, 'login-redirect-fix red')
+  const clock = mock.clock(on)
+
+  await submit($, clock)
+  await completeTurn($, clock, true)
+  expect(commands).toEqual([])
+
+  await completeTurn($, clock)
+  expect(commands).toEqual(['/color red'])
+})
+
+test('keeps a color the person sets while the plugin claims one', async ($, on) => {
+  let turns = 1
+  const { commands, files, afterWrite } = world(on, 'login-redirect-fix red', () => turns)
+  const clock = mock.clock(on)
+  let row: Promise<unknown> | undefined
+  afterWrite((path) => {
+    if (row === undefined && path === colorFile('red'))
+      row = commandRow($, clock, COLOR_ECHO('pink'))
+  })
+
+  await completeTurn($, clock)
+  await drive(clock, row ?? Promise.resolve())
+  turns = 2
+  const result = await submit($, clock)
+
+  expect(commands).toEqual([])
+  expect(claimsIn(files)).toEqual({ [SESSION_ID]: 'pink' })
+  expect(result.sessionTitle).toBe('login-redirect-fix')
+})
+
+test(
+  'keeps a closing color word in a free text rename',
+  { options: { style: 'free text' } },
+  async ($, on) => {
+    let turns = 1
+    let reply = 'Fix the login redirect red'
+    world(
+      on,
+      () => reply,
+      () => turns,
+    )
+    const clock = mock.clock(on)
+
+    await submit($, clock)
+    turns = 2
+    reply = 'Make the button green'
+    await completeTurn($, clock)
+    const result = await submit($, clock, 'Fix the login redirect')
+
+    expect(result.sessionTitle).toBe('Make the button green')
   },
 )
 
